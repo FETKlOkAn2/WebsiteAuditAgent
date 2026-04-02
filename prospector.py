@@ -41,52 +41,40 @@ logger = logging.getLogger(__name__)
 
 def search_google_serp(query: str, num_results: int = 20, api_key: str = "", cx: str = "") -> list[dict]:
     """
-    Search via Google Custom Search JSON API (free tier: 100 queries/day).
-    Get keys at: https://developers.google.com/custom-search/v1/introduction
-    Set GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_CX in .env
+    Search via Serper.dev API (2500 free queries/month).
+    Set SERPER_API_KEY in .env
     """
-    api_key = api_key or os.getenv("GOOGLE_SEARCH_API_KEY", "")
-    cx = cx or os.getenv("GOOGLE_SEARCH_CX", "")
+    api_key = api_key or os.getenv("SERPER_API_KEY", "")
 
-    if not api_key or not cx:
-        logger.warning("No Google Search API key/CX configured")
+    if not api_key:
+        logger.warning("No Serper API key configured (SERPER_API_KEY)")
         return []
 
     results = []
-    # Google API returns max 10 per request
-    for start in range(1, num_results + 1, 10):
-        params = {
-            "key": api_key,
-            "cx": cx,
-            "q": query,
-            "start": start,
-            "num": min(10, num_results - len(results)),
-        }
-        try:
-            resp = requests.get(
-                "https://www.googleapis.com/customsearch/v1",
-                params=params,
-                timeout=15,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                for item in data.get("items", []):
-                    results.append({
-                        "url": item["link"],
-                        "title": item.get("title", ""),
-                        "snippet": item.get("snippet", ""),
-                    })
-            elif resp.status_code == 429:
-                logger.warning("Google Search API rate limited, stopping")
-                break
-            else:
-                logger.error(f"Google Search API error: {resp.status_code}")
-                break
-        except requests.RequestException as e:
-            logger.error(f"Google Search error: {e}")
-            break
-
-        time.sleep(1)
+    try:
+        resp = requests.post(
+            "https://google.serper.dev/search",
+            headers={
+                "X-API-KEY": api_key,
+                "Content-Type": "application/json",
+            },
+            json={"q": query, "num": min(num_results, 10)},
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            for item in data.get("organic", []):
+                results.append({
+                    "url": item.get("link", ""),
+                    "title": item.get("title", ""),
+                    "snippet": item.get("snippet", ""),
+                })
+        elif resp.status_code == 429:
+            logger.warning("Serper API rate limited")
+        else:
+            logger.error(f"Serper API error: {resp.status_code} — {resp.text[:200]}")
+    except requests.RequestException as e:
+        logger.error(f"Serper search error: {e}")
 
     return results[:num_results]
 
@@ -423,7 +411,7 @@ def prospect(
     for query in queries:
         # Try Google API first, fall back to DuckDuckGo
         results = []
-        if os.getenv("GOOGLE_SEARCH_API_KEY"):
+        if os.getenv("SERPER_API_KEY"):
             results = search_google_serp(query, num_results=10)
         if not results:
             logger.info(f"  Using DuckDuckGo for: {query}")
