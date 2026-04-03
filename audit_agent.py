@@ -181,15 +181,73 @@ def run_batch(
     return results
 
 
+# ---------------------------------------------------------------------------
+# Sent emails registry — never email the same address or domain twice
+# ---------------------------------------------------------------------------
+
+SENT_REGISTRY_FILE = os.path.join(config.OUTPUT_DIR, "sent_registry.json")
+
+
+def _load_sent_registry() -> dict:
+    """Load the registry of already-contacted emails and domains."""
+    if os.path.exists(SENT_REGISTRY_FILE):
+        with open(SENT_REGISTRY_FILE, "r") as f:
+            return json.load(f)
+    return {"emails": {}, "domains": {}}
+
+
+def _save_sent_registry(registry: dict):
+    """Save the sent registry to disk."""
+    os.makedirs(config.OUTPUT_DIR, exist_ok=True)
+    with open(SENT_REGISTRY_FILE, "w") as f:
+        json.dump(registry, f, indent=2)
+
+
+def _record_sent(registry: dict, email: str, website: str, subject: str):
+    """Record that we sent to this email/domain."""
+    from urllib.parse import urlparse
+    domain = urlparse(website).netloc.lower().replace("www.", "")
+    now = datetime.now().isoformat()
+
+    registry["emails"][email.lower()] = {
+        "website": website,
+        "subject": subject,
+        "sent_at": now,
+    }
+    registry["domains"][domain] = {
+        "email": email,
+        "sent_at": now,
+    }
+
+
+def _already_contacted(registry: dict, email: str, website: str) -> str | None:
+    """Check if we've already contacted this email or domain. Returns reason or None."""
+    from urllib.parse import urlparse
+
+    email_lower = email.lower()
+    if email_lower in registry.get("emails", {}):
+        prev = registry["emails"][email_lower]
+        return f"already emailed {email} on {prev.get('sent_at', '?')[:10]}"
+
+    domain = urlparse(website).netloc.lower().replace("www.", "")
+    if domain in registry.get("domains", {}):
+        prev = registry["domains"][domain]
+        return f"already contacted {domain} via {prev.get('email', '?')} on {prev.get('sent_at', '?')[:10]}"
+
+    return None
+
+
 def _prepare_send_list(audit_results: list[dict], contacts: dict = None) -> list[dict]:
     """
     Match audit results with contact emails.
     Uses contacts CSV if provided, otherwise uses auto-extracted emails from scraping.
+    Skips emails/domains we've already contacted.
     Returns list of {to, subject, body, website} ready to send.
     """
     from urllib.parse import urlparse
     contacts = contacts or {}
     send_list = []
+    registry = _load_sent_registry()
 
     for r in audit_results:
         email_data = r.get("email", {})
@@ -212,6 +270,12 @@ def _prepare_send_list(audit_results: list[dict], contacts: dict = None) -> list
                 to_email = scraped_emails[0]  # best match (already sorted by priority)
 
         if to_email:
+            # Check if already contacted
+            reason = _already_contacted(registry, to_email, url)
+            if reason:
+                logger.info(f"Skipping {url} — {reason}")
+                continue
+
             send_list.append({
                 "to": to_email,
                 "subject": subject,
@@ -347,6 +411,14 @@ def cmd_send(args):
         delay=args.delay,
     )
 
+    # Record sent emails so we never contact them again
+    if not dry_run:
+        registry = _load_sent_registry()
+        for sl, sr in zip(send_list, results):
+            if sr.get("status") == "sent":
+                _record_sent(registry, sl["to"], sl["website"], sl["subject"])
+        _save_sent_registry(registry)
+
     log_path = save_send_log(results)
     print_send_summary(results)
     print(f"  Send log saved to: {log_path}\n")
@@ -432,6 +504,13 @@ def cmd_pipeline(args):
                 send_results = send_batch(
                     emails=send_list, from_name=args.sender, dry_run=dry_run,
                 )
+                # Record sent emails so we never contact them again
+                if not dry_run:
+                    registry = _load_sent_registry()
+                    for sl, sr in zip(send_list, send_results):
+                        if sr.get("status") == "sent":
+                            _record_sent(registry, sl["to"], sl["website"], sl["subject"])
+                    _save_sent_registry(registry)
                 log_path = save_send_log(send_results)
                 print_send_summary(send_results)
                 print(f"  Send log: {log_path}")
@@ -643,6 +722,12 @@ def cmd_campaign(args):
                         if not dry_run:
                             sent_count = sum(1 for r in send_results if r.get("status") == "sent")
                             today_usage["emails_sent"] += sent_count
+                            # Record sent emails so we never contact them again
+                            registry = _load_sent_registry()
+                            for sl, sr in zip(send_list, send_results):
+                                if sr.get("status") == "sent":
+                                    _record_sent(registry, sl["to"], sl["website"], sl["subject"])
+                            _save_sent_registry(registry)
                         else:
                             today_usage["emails_sent"] += len(send_list)
 

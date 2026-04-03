@@ -48,6 +48,13 @@ jobs:
           path: output/
         continue-on-error: true  # First run won't have progress yet
 
+      - name: Download sent registry
+        uses: actions/download-artifact@v4
+        with:
+          name: sent-registry
+          path: output/
+        continue-on-error: true  # First run won't have registry yet
+
       - name: Run campaign
         run: python audit_agent.py campaign --send --confirm-send
         timeout-minutes: 90
@@ -58,6 +65,14 @@ jobs:
         with:
           name: campaign-progress
           path: output/campaign_progress.json
+          overwrite: true
+
+      - name: Upload sent registry (never email same person twice)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sent-registry
+          path: output/sent_registry.json
           overwrite: true
 
       - name: Upload results
