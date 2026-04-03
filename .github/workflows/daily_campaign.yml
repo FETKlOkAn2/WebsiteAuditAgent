@@ -1,0 +1,71 @@
+name: Daily Campaign
+
+on:
+  schedule:
+    # Runs every day at 9:00 AM UTC (11:00 AM Bratislava time)
+    - cron: '0 9 * * *'
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  campaign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create .env from secrets
+        run: |
+          cat > .env << 'ENVEOF'
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          PAGESPEED_API_KEY=${{ secrets.PAGESPEED_API_KEY }}
+          SERPER_API_KEY=${{ secrets.SERPER_API_KEY }}
+          SMTP_HOST=${{ secrets.SMTP_HOST }}
+          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_EMAIL=${{ secrets.SMTP_EMAIL }}
+          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+          LLM_MODEL=claude-sonnet-4-6
+          SEND_DELAY_SECONDS=30
+          PAGESPEED_DELAY_SECONDS=2
+          SCRAPE_DELAY_SECONDS=1
+          OUTPUT_DIR=output
+          ENVEOF
+
+      - name: Download previous progress
+        uses: actions/download-artifact@v4
+        with:
+          name: campaign-progress
+          path: output/
+        continue-on-error: true  # First run won't have progress yet
+
+      - name: Run campaign
+        run: python audit_agent.py campaign --send --confirm-send
+        timeout-minutes: 90
+
+      - name: Upload progress (persists between runs)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: campaign-progress
+          path: output/campaign_progress.json
+          overwrite: true
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: campaign-results-${{ github.run_number }}
+          path: |
+            output/*.json
+            output/*.csv
+          retention-days: 30

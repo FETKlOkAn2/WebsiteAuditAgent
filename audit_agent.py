@@ -20,8 +20,10 @@ import argparse
 import csv
 import json
 import logging
+import os
 import sys
 import time
+from datetime import datetime
 
 import config
 from scraper import analyze_website
@@ -40,6 +42,9 @@ from sender import (
     ZOHO_EMAIL,
     ZOHO_PASSWORD,
 )
+
+import warnings
+warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -442,6 +447,244 @@ def cmd_pipeline(args):
 
 
 # ---------------------------------------------------------------------------
+# Campaign — run through agent_input.csv until daily limits are hit
+# ---------------------------------------------------------------------------
+
+CAMPAIGN_PROGRESS_FILE = os.path.join(config.OUTPUT_DIR, "campaign_progress.json")
+
+# Free tier limits
+DEFAULT_SERPER_DAILY_LIMIT = 80      # ~2500/month ÷ 31 days = ~80/day to spread evenly
+DEFAULT_EMAIL_DAILY_LIMIT = 40       # Zoho free = 50/day, keep 10 buffer
+DEFAULT_PAGESPEED_DAILY_LIMIT = 400  # 25k/day but no need to hog it
+
+
+def _load_campaign_progress() -> dict:
+    """Load campaign progress from disk."""
+    if os.path.exists(CAMPAIGN_PROGRESS_FILE):
+        with open(CAMPAIGN_PROGRESS_FILE, "r") as f:
+            return json.load(f)
+    return {"completed": [], "daily_logs": {}}
+
+
+def _save_campaign_progress(progress: dict):
+    """Save campaign progress to disk."""
+    os.makedirs(config.OUTPUT_DIR, exist_ok=True)
+    with open(CAMPAIGN_PROGRESS_FILE, "w") as f:
+        json.dump(progress, f, indent=2)
+
+
+def _get_today_usage(progress: dict) -> dict:
+    """Get today's usage counters."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    if today not in progress.get("daily_logs", {}):
+        progress.setdefault("daily_logs", {})[today] = {
+            "serper_queries": 0,
+            "emails_sent": 0,
+            "pagespeed_calls": 0,
+            "combos_processed": 0,
+        }
+    return progress["daily_logs"][today]
+
+
+def cmd_campaign(args):
+    """
+    Handle the 'campaign' subcommand.
+    Reads niche/location pairs from agent_input.csv and runs the pipeline
+    for each one, stopping when daily API limits are reached.
+    Tracks progress so you can resume the next day.
+    """
+    if not config.ANTHROPIC_API_KEY:
+        print("ERROR: ANTHROPIC_API_KEY not set. Add it to .env file.")
+        sys.exit(1)
+
+    # Load the input CSV
+    input_file = args.input_csv
+    if not os.path.exists(input_file):
+        print(f"ERROR: Input file not found: {input_file}")
+        sys.exit(1)
+
+    combos = []
+    with open(input_file, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            niche = row.get("niche", "").strip()
+            location = row.get("location", "").strip()
+            if niche:
+                combos.append(f"{niche}|{location}")
+
+    if not combos:
+        print(f"ERROR: No niche/location pairs found in {input_file}")
+        sys.exit(1)
+
+    # Load progress
+    progress = _load_campaign_progress()
+    completed = set(progress.get("completed", []))
+    today_usage = _get_today_usage(progress)
+
+    # Filter out already-completed combos (unless --reset)
+    if args.reset:
+        completed = set()
+        progress["completed"] = []
+        _save_campaign_progress(progress)
+        print("  Progress reset — starting from scratch.\n")
+
+    remaining = [c for c in combos if c not in completed]
+
+    if not remaining:
+        print(f"\n  All {len(combos)} niche/location combos have been processed!")
+        print(f"  Use --reset to start over.\n")
+        sys.exit(0)
+
+    # Limits
+    serper_limit = args.serper_limit
+    email_limit = args.email_limit
+
+    # Estimate: each pipeline run uses ~8 Serper queries (4 base + ~4 LLM-generated)
+    QUERIES_PER_RUN = 8
+
+    print(f"\n{'='*60}")
+    print(f" CAMPAIGN MODE")
+    print(f"{'='*60}")
+    print(f"  Total combos: {len(combos)}")
+    print(f"  Already done:  {len(completed)}")
+    print(f"  Remaining:     {len(remaining)}")
+    print(f"  Today's usage: {today_usage['serper_queries']} Serper queries, "
+          f"{today_usage['emails_sent']} emails sent")
+    print(f"  Daily limits:  {serper_limit} Serper queries, {email_limit} emails")
+    print(f"  Send emails:   {'YES' if args.send else 'NO (dry run)'}")
+    print(f"{'='*60}\n")
+
+    processed_this_session = 0
+
+    for combo in remaining:
+        niche, location = combo.split("|", 1)
+
+        # Check if we'd exceed Serper limit
+        if today_usage["serper_queries"] + QUERIES_PER_RUN > serper_limit:
+            print(f"\n  STOPPING — Serper daily limit approaching "
+                  f"({today_usage['serper_queries']}/{serper_limit} queries used)")
+            print(f"  Resume tomorrow: python audit_agent.py campaign\n")
+            break
+
+        # Check email limit
+        if args.send and today_usage["emails_sent"] >= email_limit:
+            print(f"\n  STOPPING — Email daily limit reached "
+                  f"({today_usage['emails_sent']}/{email_limit} emails sent)")
+            print(f"  Resume tomorrow: python audit_agent.py campaign --send\n")
+            break
+
+        processed_this_session += 1
+        print(f"\n{'─'*60}")
+        print(f" [{processed_this_session}] {niche} in {location}")
+        print(f" (Serper: {today_usage['serper_queries']}/{serper_limit} | "
+              f"Emails: {today_usage['emails_sent']}/{email_limit})")
+        print(f"{'─'*60}\n")
+
+        try:
+            # Step 1: Prospect
+            prospects = run_prospect(
+                niche=niche,
+                location=location,
+                num_results=args.count,
+                min_score=args.min_score,
+            )
+
+            # Count Serper queries used (estimate)
+            today_usage["serper_queries"] += QUERIES_PER_RUN
+
+            if not prospects:
+                logger.info(f"No prospects found for {niche} in {location}")
+                completed.add(combo)
+                progress["completed"] = list(completed)
+                today_usage["combos_processed"] += 1
+                _save_campaign_progress(progress)
+                continue
+
+            save_prospects_csv(prospects)
+
+            # Step 2: Audit top prospects
+            top_n = min(args.audit_top, len(prospects))
+            urls = [
+                {"url": p["url"], "name": p.get("name", "")}
+                for p in prospects[:top_n]
+            ]
+
+            results = run_batch(
+                urls=urls,
+                skip_pagespeed=args.skip_pagespeed,
+                agency_name=args.agency,
+                sender_name=args.sender,
+                sender_title=args.title,
+            )
+
+            today_usage["pagespeed_calls"] += top_n
+
+            json_path = save_json(results)
+            save_csv(results)
+
+            # Step 3: Send emails (if enabled)
+            if args.send:
+                contacts = {}
+                send_list = _prepare_send_list(results, contacts)
+
+                if send_list:
+                    # Trim to stay within daily email limit
+                    remaining_emails = email_limit - today_usage["emails_sent"]
+                    send_list = send_list[:remaining_emails]
+
+                    if send_list:
+                        dry_run = not args.confirm_send
+                        send_results = send_batch(
+                            emails=send_list,
+                            from_name=args.sender_full,
+                            dry_run=dry_run,
+                        )
+
+                        if not dry_run:
+                            sent_count = sum(1 for r in send_results if r.get("status") == "sent")
+                            today_usage["emails_sent"] += sent_count
+                        else:
+                            today_usage["emails_sent"] += len(send_list)
+
+                        save_send_log(send_results)
+
+            # Mark combo as done
+            completed.add(combo)
+            progress["completed"] = list(completed)
+            today_usage["combos_processed"] += 1
+            _save_campaign_progress(progress)
+
+            logger.info(f"Completed: {niche} in {location} "
+                       f"({len(prospects)} prospects, {top_n} audited)")
+
+        except KeyboardInterrupt:
+            print(f"\n\n  Campaign interrupted. Progress saved — resume anytime.\n")
+            _save_campaign_progress(progress)
+            sys.exit(0)
+        except Exception as e:
+            logger.error(f"Error processing {niche} in {location}: {e}")
+            # Don't mark as completed so it retries next time
+            _save_campaign_progress(progress)
+            continue
+
+    # Final summary
+    print(f"\n{'='*60}")
+    print(f" CAMPAIGN SESSION COMPLETE")
+    print(f"{'='*60}")
+    print(f"  Processed this session: {processed_this_session}")
+    print(f"  Total completed:        {len(completed)}/{len(combos)}")
+    print(f"  Serper queries today:   {today_usage['serper_queries']}")
+    print(f"  Emails sent today:      {today_usage['emails_sent']}")
+    remaining_count = len(combos) - len(completed)
+    if remaining_count > 0:
+        print(f"  Remaining:              {remaining_count}")
+        print(f"\n  Resume tomorrow: python audit_agent.py campaign"
+              f"{' --send --confirm-send' if args.send else ''}\n")
+    else:
+        print(f"\n  All combos processed! Use --reset to start over.\n")
+
+
+# ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
 
@@ -542,12 +785,58 @@ Examples:
     p_pipeline.add_argument("--confirm-send", action="store_true", help="Actually send (default is dry-run)")
     p_pipeline.set_defaults(func=cmd_pipeline)
 
+    # --- campaign ---
+    p_campaign = subparsers.add_parser(
+        "campaign",
+        help="Run through agent_input.csv until daily limits are hit",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Reads niche/location pairs from agent_input.csv (or custom CSV).
+Runs the full pipeline for each pair, tracking progress and stopping
+when free-tier API limits are approached. Resume the next day.
+
+Free tier limits (daily):
+  Serper:     ~80/day (2500/month spread evenly)
+  Zoho email: 50/day (we use 40 as buffer)
+  PageSpeed:  25,000/day (not a concern)
+
+Examples:
+  # Dry run (no emails sent)
+  python audit_agent.py campaign
+
+  # Actually send emails
+  python audit_agent.py campaign --send --confirm-send
+
+  # Custom input file and limits
+  python audit_agent.py campaign --input my_niches.csv --serper-limit 100
+
+  # Reset progress and start over
+  python audit_agent.py campaign --reset
+        """,
+    )
+    p_campaign.add_argument("--input-csv", default="agent_input.csv", help="CSV with niche,location columns (default: agent_input.csv)")
+    p_campaign.add_argument("--serper-limit", type=int, default=DEFAULT_SERPER_DAILY_LIMIT, help=f"Max Serper queries per day (default: {DEFAULT_SERPER_DAILY_LIMIT})")
+    p_campaign.add_argument("--email-limit", type=int, default=DEFAULT_EMAIL_DAILY_LIMIT, help=f"Max emails per day (default: {DEFAULT_EMAIL_DAILY_LIMIT})")
+    p_campaign.add_argument("--count", type=int, default=20, help="Max URLs to prospect per combo (default: 20)")
+    p_campaign.add_argument("--min-score", type=int, default=25, help="Min prospect score (default: 25)")
+    p_campaign.add_argument("--audit-top", type=int, default=5, help="Top N prospects to audit per combo (default: 5)")
+    p_campaign.add_argument("--skip-pagespeed", action="store_true", help="Skip PageSpeed API")
+    p_campaign.add_argument("--agency", default="EMTD Studio", help="Agency name")
+    p_campaign.add_argument("--sender", default="Tomas", help="Sender first name")
+    p_campaign.add_argument("--sender-full", default="Tomas Maxim", help="Sender full name (for emails)")
+    p_campaign.add_argument("--title", default="Founder", help="Sender title")
+    p_campaign.add_argument("--send", action="store_true", help="Enable email sending")
+    p_campaign.add_argument("--confirm-send", action="store_true", help="Actually send (default is dry-run)")
+    p_campaign.add_argument("--reset", action="store_true", help="Reset progress and start from scratch")
+    p_campaign.set_defaults(func=cmd_campaign)
+
     args = parser.parse_args()
 
     if not args.command:
         parser.print_help()
         print("\nQuick start:")
         print('  python audit_agent.py pipeline --niche "plumber" --location "Austin TX"')
+        print('  python audit_agent.py campaign                    # run through all niches')
         print('  python audit_agent.py audit --url https://example.com')
         sys.exit(0)
 
