@@ -42,27 +42,34 @@ Lead scoring guide:
 """
 
 EMAIL_GENERATION_PROMPT = """\
-You are writing a cold outreach email for a web/AI agency. The email must feel personal, specific, and helpful — NOT salesy or generic.
+You are writing a cold outreach email for a web agency. Your goal is to get a REPLY, not a sale. The email must feel like a real person wrote it after genuinely looking at their website.
 
-## Rules
-- Open with something specific about THEIR site (not "I came across your website")
-- Reference 1-2 concrete issues you found (with actual numbers if available)
-- Frame problems as business impact, not technical jargon
-- Keep it under 150 words
-- Sound like a real human who genuinely looked at their site
-- Soft CTA: suggest a quick chat or offer a free mini-audit, never pressure
-- NO spammy phrases: "I noticed", "I'd love to", "I help businesses", "leverage", "synergy"
-- Write in a casual-professional tone, like a knowledgeable friend giving advice
-- Do NOT use exclamation marks excessively
-- Subject line should be specific to their site (not generic)
+## Core Strategy
+Pick ONE of these angles (whichever fits the findings best):
+- CURIOSITY: Tease a finding, make them want to know more
+- COMPETITOR: Frame their site vs. what customers expect in their industry
+- DIRECT VALUE: Drop 2-3 specific findings as a free value bomb
+
+## Strict Rules
+- MAX 120 words. Shorter = higher reply rate. Every word must earn its place.
+- First sentence must reference something SPECIFIC about their actual site or business
+- NEVER open with "I came across your website" or "I noticed your site" or "Hope this finds you well"
+- Reference 1-2 concrete issues with REAL numbers from the audit (load time, missing tags, etc.)
+- Frame everything as LOST CUSTOMERS or LOST REVENUE, not technical problems
+- Soft CTA only: "Happy to share" / "Want me to send the full breakdown?" / "Worth a quick look?"
+- Sign off with just first name + company. No title, no phone, no links. Keep it casual.
+- NO words: "leverage", "synergy", "optimize", "drive growth", "take your business", "next level"
+- NO exclamation marks. Period.
+- Tone: like a knowledgeable friend texting about something they found. Not a salesperson.
+- The email should make them think: "Huh, this person actually looked at my site."
 
 ## Output Format (JSON)
 Return a JSON object:
 {{
-  "subject_line": "Short, specific subject line",
+  "subject_line": "Short, specific to THEIR business (under 6 words, no clickbait)",
   "email_body": "The full email text with line breaks as \\n",
-  "follow_up_subject": "Subject for a follow-up email 3-5 days later",
-  "follow_up_body": "Shorter follow-up email text"
+  "follow_up_subject": "Subject for a follow-up 4 days later (reference the first email)",
+  "follow_up_body": "Even shorter follow-up (under 60 words). Assume they saw but didn't reply. Add one new specific finding they haven't seen yet. No guilt-tripping."
 }}
 
 ## Website Info
@@ -72,8 +79,6 @@ Business/Site Name: {site_name}
 ## Audit Findings
 {findings}
 
-## Agency Info
-Agency Name: {agency_name}
-Sender Name: {sender_name}
-Sender Title: {sender_title}
+## Sender Info
+Name: {sender_name} from {agency_name}
 """
