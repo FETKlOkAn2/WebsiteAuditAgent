@@ -1,0 +1,8 @@
+# Dry run (prospect + audit, no emails sent)
+.venv/bin/python audit_agent.py campaign
+
+# Actually send emails
+.venv/bin/python audit_agent.py campaign --send --confirm-send
+
+# Reset progress to start from scratch
+.venv/bin/python audit_agent.py campaign --reset
