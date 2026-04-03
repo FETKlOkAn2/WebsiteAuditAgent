@@ -120,12 +120,25 @@ def process_single(
     agency_name: str = "Our Agency",
     sender_name: str = "Tomas",
     sender_title: str = "Founder",
+    require_email: bool = False,
 ) -> dict:
-    """Full audit pipeline for a single URL."""
+    """
+    Full audit pipeline for a single URL.
+    If require_email=True, skips the expensive LLM analysis when no
+    contact email can be found (saves Anthropic tokens).
+    """
     audit = analyze_website(url, skip_pagespeed=skip_pagespeed)
 
     if audit.get("error"):
         logger.error(f"Failed to analyze {url}: {audit['error']}")
+        return audit
+
+    # Check for contact email before spending tokens on LLM
+    if require_email and not audit.get("contact_emails"):
+        logger.info(f"No contact email found for {url} — skipping LLM analysis (saving tokens)")
+        audit["analysis"] = None
+        audit["email"] = None
+        audit["skipped_reason"] = "no_contact_email"
         return audit
 
     site_name = name or ""
@@ -157,10 +170,12 @@ def run_batch(
     agency_name: str = "Our Agency",
     sender_name: str = "Tomas",
     sender_title: str = "Founder",
+    require_email: bool = False,
 ) -> list[dict]:
     """Process a batch of URLs with rate limiting."""
     results = []
     total = len(urls)
+    skipped = 0
 
     for i, entry in enumerate(urls, 1):
         url = entry["url"]
@@ -171,12 +186,18 @@ def run_batch(
         result = process_single(
             url=url, name=name, skip_pagespeed=skip_pagespeed,
             agency_name=agency_name, sender_name=sender_name,
-            sender_title=sender_title,
+            sender_title=sender_title, require_email=require_email,
         )
         results.append(result)
 
+        if result.get("skipped_reason") == "no_contact_email":
+            skipped += 1
+
         if i < total:
             time.sleep(config.SCRAPE_DELAY)
+
+    if skipped:
+        logger.info(f"Skipped LLM analysis for {skipped}/{total} sites (no contact email)")
 
     return results
 
@@ -463,7 +484,7 @@ def cmd_pipeline(args):
     results = run_batch(
         urls=urls, skip_pagespeed=args.skip_pagespeed,
         agency_name=args.agency, sender_name=args.sender,
-        sender_title=args.title,
+        sender_title=args.title, require_email=True,
     )
 
     json_path = save_json(results)
@@ -694,6 +715,7 @@ def cmd_campaign(args):
                 agency_name=args.agency,
                 sender_name=args.sender,
                 sender_title=args.title,
+                require_email=True,
             )
 
             today_usage["pagespeed_calls"] += top_n

@@ -219,14 +219,43 @@ def quick_qualify(url: str) -> dict:
         "skip_reason": None,
     }
 
-    # Skip known directories, social media, and marketplaces
+    # Skip known directories, social media, marketplaces, and booking platforms
     skip_domains = [
+        # Social media
         "yelp.com", "facebook.com", "instagram.com", "twitter.com",
         "linkedin.com", "youtube.com", "tiktok.com", "pinterest.com",
+        "reddit.com", "nextdoor.com",
+        # Directories & review sites
         "yellowpages.com", "bbb.org", "indeed.com", "glassdoor.com",
-        "amazon.com", "ebay.com", "etsy.com", "reddit.com",
-        "wikipedia.org", "craigslist.org", "nextdoor.com",
-        "thumbtack.com", "angi.com", "homeadvisor.com",
+        "craigslist.org", "tripadvisor.com", "trustpilot.com",
+        "mapquest.com", "superpages.com", "whitepages.com",
+        "manta.com", "chamberofcommerce.com", "hotfrog.com",
+        # Marketplaces
+        "amazon.com", "ebay.com", "etsy.com",
+        # Home services platforms
+        "thumbtack.com", "angi.com", "homeadvisor.com", "houzz.com",
+        "porch.com", "bark.com", "taskrabbit.com",
+        # Booking & scheduling platforms (NOT actual business sites)
+        "thecut.co", "booksy.com", "vagaro.com", "fresha.com",
+        "mindbodyonline.com", "mindbody.io", "acuityscheduling.com",
+        "schedulicity.com", "square.site", "squareup.com",
+        "calendly.com", "setmore.com", "styleseat.com",
+        "genbook.com", "treatwell.com", "boulevard.io",
+        # Website builders (profile pages, not custom sites)
+        "wix.com", "weebly.com", "godaddy.com", "site123.com",
+        # Medical/legal directories
+        "zocdoc.com", "healthgrades.com", "vitals.com", "webmd.com",
+        "realself.com", "avvo.com", "justia.com", "findlaw.com",
+        "lawyers.com", "martindale.com", "nolo.com",
+        # Real estate platforms
+        "zillow.com", "realtor.com", "redfin.com", "trulia.com",
+        # Restaurant platforms
+        "doordash.com", "grubhub.com", "ubereats.com", "opentable.com",
+        # General knowledge
+        "wikipedia.org", "wikihow.com",
+        # List/ranking sites (not actual businesses)
+        "top.thecut.co", "expertise.com", "three-best-rated.com",
+        "birdeye.com", "merchantcircle.com",
     ]
 
     parsed = urlparse(url)
