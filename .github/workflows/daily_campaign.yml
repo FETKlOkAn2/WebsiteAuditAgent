@@ -1,11 +1,24 @@
 name: Daily Campaign
 
+# Runs 3 times a day — one sender per run
+# 9:00 UTC (11:00 Bratislava) = Tomas
+# 12:00 UTC (14:00 Bratislava) = Sender 2
+# 15:00 UTC (17:00 Bratislava) = Sender 3
 on:
   schedule:
-    # Runs every day at 9:00 AM UTC (11:00 AM Bratislava time)
     - cron: '0 9 * * *'
+    - cron: '0 12 * * *'
+    - cron: '0 15 * * *'
   workflow_dispatch:
     inputs:
+      sender:
+        description: 'Which sender to use'
+        type: choice
+        options:
+          - tomas
+          - sender2
+          - sender3
+        default: tomas
       reset:
         description: 'Reset progress and start from scratch'
         type: boolean
@@ -33,9 +46,63 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Create .env from secrets
+      # Figure out which sender based on schedule or manual input
+      - name: Determine sender
+        id: sender
         run: |
-          cat > .env << 'ENVEOF'
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.sender }}" >> $GITHUB_OUTPUT
+          else
+            HOUR=$(date -u +%H)
+            if [ "$HOUR" = "09" ]; then
+              echo "name=tomas" >> $GITHUB_OUTPUT
+            elif [ "$HOUR" = "12" ]; then
+              echo "name=sender2" >> $GITHUB_OUTPUT
+            else
+              echo "name=sender3" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      # Create .env with the right sender's credentials
+      # Shared: ANTHROPIC_API_KEY, PAGESPEED_API_KEY, SERPER_API_KEY
+      # Per-sender: SMTP_HOST, SMTP_PORT, SMTP_EMAIL, SMTP_PASSWORD
+      - name: Create .env for sender
+        run: |
+          SENDER="${{ steps.sender.outputs.name }}"
+          echo "Using sender: $SENDER"
+
+          if [ "$SENDER" = "sender2" ]; then
+            cat > .env <<EOF
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          PAGESPEED_API_KEY=${{ secrets.PAGESPEED_API_KEY }}
+          SERPER_API_KEY=${{ secrets.SERPER_API_KEY_2 || secrets.SERPER_API_KEY }}
+          SMTP_HOST=${{ secrets.SMTP_HOST_2 || secrets.SMTP_HOST }}
+          SMTP_PORT=${{ secrets.SMTP_PORT_2 || secrets.SMTP_PORT }}
+          SMTP_EMAIL=${{ secrets.SMTP_EMAIL_2 }}
+          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD_2 }}
+          LLM_MODEL=claude-sonnet-4-6
+          SEND_DELAY_SECONDS=30
+          PAGESPEED_DELAY_SECONDS=2
+          SCRAPE_DELAY_SECONDS=1
+          OUTPUT_DIR=output
+          EOF
+          elif [ "$SENDER" = "sender3" ]; then
+            cat > .env <<EOF
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          PAGESPEED_API_KEY=${{ secrets.PAGESPEED_API_KEY }}
+          SERPER_API_KEY=${{ secrets.SERPER_API_KEY_3 || secrets.SERPER_API_KEY }}
+          SMTP_HOST=${{ secrets.SMTP_HOST_3 || secrets.SMTP_HOST }}
+          SMTP_PORT=${{ secrets.SMTP_PORT_3 || secrets.SMTP_PORT }}
+          SMTP_EMAIL=${{ secrets.SMTP_EMAIL_3 }}
+          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD_3 }}
+          LLM_MODEL=claude-sonnet-4-6
+          SEND_DELAY_SECONDS=30
+          PAGESPEED_DELAY_SECONDS=2
+          SCRAPE_DELAY_SECONDS=1
+          OUTPUT_DIR=output
+          EOF
+          else
+            cat > .env <<EOF
           ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
           PAGESPEED_API_KEY=${{ secrets.PAGESPEED_API_KEY }}
           SERPER_API_KEY=${{ secrets.SERPER_API_KEY }}
@@ -48,35 +115,49 @@ jobs:
           PAGESPEED_DELAY_SECONDS=2
           SCRAPE_DELAY_SECONDS=1
           OUTPUT_DIR=output
-          ENVEOF
+          EOF
+          fi
 
+      # Download shared progress and sent registry
       - name: Download previous progress
         uses: actions/download-artifact@v4
         with:
           name: campaign-progress
           path: output/
-        continue-on-error: true  # First run won't have progress yet
+        continue-on-error: true
 
       - name: Download sent registry
         uses: actions/download-artifact@v4
         with:
           name: sent-registry
           path: output/
-        continue-on-error: true  # First run won't have registry yet
+        continue-on-error: true
 
       - name: Run campaign
         run: |
+          SENDER="${{ steps.sender.outputs.name }}"
           ARGS="campaign --send --confirm-send"
+
+          # Set sender name based on who's sending
+          if [ "$SENDER" = "sender2" ]; then
+            ARGS="$ARGS --sender Erik --sender-full 'Erik Pitorak'"
+          elif [ "$SENDER" = "sender3" ]; then
+            ARGS="$ARGS --sender Sender3 --sender-full 'Sender Three'"
+          fi
+
           if [ "${{ inputs.reset }}" = "true" ]; then
             ARGS="$ARGS --reset"
           fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             ARGS="campaign"
           fi
+
+          echo "Running: python audit_agent.py $ARGS"
           python audit_agent.py $ARGS
         timeout-minutes: 90
 
-      - name: Upload progress (persists between runs)
+      # Upload shared files — all senders read/write the same ones
+      - name: Upload progress
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -84,7 +165,7 @@ jobs:
           path: output/campaign_progress.json
           overwrite: true
 
-      - name: Upload sent registry (never email same person twice)
+      - name: Upload sent registry
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -96,7 +177,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: campaign-results-${{ github.run_number }}
+          name: campaign-results-${{ steps.sender.outputs.name }}-${{ github.run_number }}
           path: |
             output/*.json
             output/*.csv
