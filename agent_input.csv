@@ -1,33 +1,10 @@
 niche,location
-barbershop,Houston
-barbershop,Atlanta
-barbershop,Miami
-barbershop,Nashville
-barbershop,Denver
-barbershop,Phoenix
-hair salon,Los Angeles
-hair salon,Miami
-hair salon,Austin
-hair salon,Scottsdale
-hair salon,Charlotte
-hair salon,Portland
-nail salon,Houston
-nail salon,Dallas
-nail salon,Orlando
-nail salon,Phoenix
-nail salon,Las Vegas
-nail salon,Tampa
-tattoo shop,Austin
-tattoo shop,Portland
-tattoo shop,Nashville
-tattoo shop,Miami
-tattoo shop,Denver
-medspa,Los Angeles
 medspa,Scottsdale
 medspa,Houston
 medspa,Atlanta
 medspa,Miami
 medspa,Dallas
+medspa,Los Angeles
 medspa,Toronto
 medspa,Calgary
 dentist,Miami
@@ -49,6 +26,16 @@ chiropractor,Tampa
 chiropractor,Portland
 chiropractor,Calgary
 chiropractor,Ottawa
+dermatologist,San Francisco
+dermatologist,Seattle
+dermatologist,Boston
+dermatologist,Austin
+dermatologist,Denver
+plastic surgeon,Beverly Hills
+plastic surgeon,Miami
+plastic surgeon,Dallas
+plastic surgeon,New York
+plastic surgeon,Chicago
 orthodontist,Phoenix
 orthodontist,Jacksonville
 orthodontist,Salt Lake City
@@ -64,39 +51,6 @@ physical therapist,Austin
 physical therapist,San Diego
 physical therapist,Nashville
 physical therapist,Portland
-massage therapist,Scottsdale
-massage therapist,Austin
-massage therapist,San Diego
-massage therapist,Portland
-massage therapist,Boulder
-dermatologist,San Francisco
-dermatologist,Seattle
-dermatologist,Boston
-dermatologist,Austin
-dermatologist,Denver
-plastic surgeon,Beverly Hills
-plastic surgeon,Miami
-plastic surgeon,Dallas
-plastic surgeon,New York
-plastic surgeon,Chicago
-personal injury lawyer,Houston
-personal injury lawyer,Los Angeles
-personal injury lawyer,Miami
-personal injury lawyer,Atlanta
-personal injury lawyer,Dallas
-family lawyer,Phoenix
-family lawyer,Denver
-family lawyer,San Antonio
-family lawyer,Jacksonville
-family lawyer,Tampa
-immigration lawyer,Miami
-immigration lawyer,New York
-immigration lawyer,Los Angeles
-immigration lawyer,Houston
-immigration lawyer,Chicago
-solicitor,London
-solicitor,Birmingham
-solicitor,Manchester
 plumber,Los Angeles
 plumber,Chicago
 plumber,Denver
@@ -138,21 +92,29 @@ pool company,Miami
 pool company,Houston
 pool company,Orlando
 pool company,San Antonio
-cleaning company,Dallas
-cleaning company,Houston
-cleaning company,Phoenix
-cleaning company,Orlando
-cleaning company,Charlotte
-moving company,Austin
-moving company,Denver
-moving company,Raleigh
-moving company,Nashville
-moving company,Tampa
 solar company,Phoenix
 solar company,Las Vegas
 solar company,San Diego
 solar company,Austin
 solar company,Denver
+personal injury lawyer,Houston
+personal injury lawyer,Los Angeles
+personal injury lawyer,Miami
+personal injury lawyer,Atlanta
+personal injury lawyer,Dallas
+family lawyer,Phoenix
+family lawyer,Denver
+family lawyer,San Antonio
+family lawyer,Jacksonville
+family lawyer,Tampa
+immigration lawyer,Miami
+immigration lawyer,New York
+immigration lawyer,Los Angeles
+immigration lawyer,Houston
+immigration lawyer,Chicago
+solicitor,London
+solicitor,Birmingham
+solicitor,Manchester
 real estate agent,Miami
 real estate agent,Austin
 real estate agent,Scottsdale
@@ -191,6 +153,16 @@ insurance agent,Houston
 insurance agent,Atlanta
 insurance agent,Charlotte
 insurance agent,Tampa
+cleaning company,Dallas
+cleaning company,Houston
+cleaning company,Phoenix
+cleaning company,Orlando
+cleaning company,Charlotte
+moving company,Austin
+moving company,Denver
+moving company,Raleigh
+moving company,Nashville
+moving company,Tampa
 gym,Miami
 gym,Austin
 gym,Denver
@@ -221,16 +193,6 @@ tutoring service,Boston
 tutoring service,New York
 tutoring service,Austin
 tutoring service,Seattle
-restaurant,Austin
-restaurant,Nashville
-restaurant,Portland
-restaurant,Denver
-restaurant,Charleston
-coffee shop,Seattle
-coffee shop,Portland
-coffee shop,Austin
-coffee shop,Denver
-coffee shop,San Diego
 wedding photographer,Austin
 wedding photographer,Nashville
 wedding photographer,Charleston
@@ -241,6 +203,44 @@ photographer,Miami
 photographer,Portland
 photographer,Seattle
 photographer,Atlanta
+massage therapist,Scottsdale
+massage therapist,Austin
+massage therapist,San Diego
+massage therapist,Portland
+massage therapist,Boulder
+tattoo shop,Austin
+tattoo shop,Portland
+tattoo shop,Nashville
+tattoo shop,Miami
+tattoo shop,Denver
+barbershop,Houston
+barbershop,Atlanta
+barbershop,Miami
+barbershop,Nashville
+barbershop,Denver
+barbershop,Phoenix
+hair salon,Los Angeles
+hair salon,Miami
+hair salon,Austin
+hair salon,Scottsdale
+hair salon,Charlotte
+hair salon,Portland
+nail salon,Houston
+nail salon,Dallas
+nail salon,Orlando
+nail salon,Phoenix
+nail salon,Las Vegas
+nail salon,Tampa
+restaurant,Austin
+restaurant,Nashville
+restaurant,Portland
+restaurant,Denver
+restaurant,Charleston
+coffee shop,Seattle
+coffee shop,Portland
+coffee shop,Austin
+coffee shop,Denver
+coffee shop,San Diego
 car dealership,Houston
 car dealership,Dallas
 car dealership,Phoenix

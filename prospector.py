@@ -241,6 +241,8 @@ def quick_qualify(url: str) -> dict:
         "schedulicity.com", "square.site", "squareup.com",
         "calendly.com", "setmore.com", "styleseat.com",
         "genbook.com", "treatwell.com", "boulevard.io",
+        "getsquire.com", "glossgenius.com", "picktime.com",
+        "theappointment.net",
         # Website builders (profile pages, not custom sites)
         "wix.com", "weebly.com", "godaddy.com", "site123.com",
         # Medical/legal directories

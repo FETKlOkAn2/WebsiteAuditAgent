@@ -271,7 +271,10 @@ def _prepare_send_list(audit_results: list[dict], contacts: dict = None) -> list
     registry = _load_sent_registry()
 
     for r in audit_results:
-        email_data = r.get("email", {})
+        # Skip results that had no LLM analysis (no contact email)
+        if r.get("skipped_reason"):
+            continue
+        email_data = r.get("email") or {}
         subject = email_data.get("subject_line", "")
         body = email_data.get("email_body", "").replace("\\n", "\n")
         url = r.get("url", "")

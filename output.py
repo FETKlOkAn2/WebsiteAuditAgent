@@ -43,21 +43,23 @@ def save_csv(results: list[dict], filename: str = None) -> str:
 
     rows = []
     for r in results:
-        issues = r.get("analysis", {}).get("issues", [])
+        analysis = r.get("analysis") or {}
+        email_data = r.get("email") or {}
+        tech = r.get("tech") or {}
+        issues = analysis.get("issues", [])
         issues_text = " | ".join(
             f"[{i.get('category', '')}] {i.get('problem', '')}" for i in issues
         )
-        email_data = r.get("email", {})
 
         rows.append({
             "website": r.get("url", ""),
-            "status": "error" if r.get("error") else "ok",
+            "status": "skipped" if r.get("skipped_reason") else ("error" if r.get("error") else "ok"),
             "performance_score_mobile": _get_ps(r, "mobile", "performance_score"),
             "performance_score_desktop": _get_ps(r, "desktop", "performance_score"),
             "seo_score": _get_ps(r, "mobile", "seo_score"),
-            "cms": r.get("tech", {}).get("cms", "") if r.get("tech") else "",
-            "lead_score": r.get("analysis", {}).get("lead_score", ""),
-            "overall_impression": r.get("analysis", {}).get("overall_impression", ""),
+            "cms": tech.get("cms", ""),
+            "lead_score": analysis.get("lead_score", ""),
+            "overall_impression": analysis.get("overall_impression", ""),
             "issues_summary": issues_text,
             "email_subject": email_data.get("subject_line", ""),
             "email_body": email_data.get("email_body", ""),
@@ -95,18 +97,23 @@ def print_summary(results: list[dict]):
     for r in results:
         url = r.get("url", "unknown")
         if r.get("error"):
-            print(f"  ✗ {url} — ERROR: {r['error']}")
+            print(f"  x {url} — ERROR: {r['error']}")
+            continue
+        if r.get("skipped_reason"):
+            print(f"  - {url} — skipped ({r['skipped_reason']})")
             continue
 
-        score = r.get("analysis", {}).get("lead_score", "?")
-        issues = r.get("analysis", {}).get("issues", [])
-        subject = r.get("email", {}).get("subject_line", "")
+        analysis = r.get("analysis") or {}
+        email_data = r.get("email") or {}
+        score = analysis.get("lead_score", "?")
+        issues = analysis.get("issues", [])
+        subject = email_data.get("subject_line", "")
 
-        print(f"  ✓ {url}")
+        print(f"  + {url}")
         print(f"    Lead Score: {score}/10")
         print(f"    Issues Found: {len(issues)}")
         for issue in issues:
-            print(f"      • [{issue.get('category', '')}] {issue.get('problem', '')}")
+            print(f"      - [{issue.get('category', '')}] {issue.get('problem', '')}")
         if subject:
             print(f"    Email Subject: {subject}")
         print()
