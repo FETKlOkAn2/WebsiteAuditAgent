@@ -66,60 +66,61 @@ jobs:
       # Create .env with the right sender's credentials
       # Shared: ANTHROPIC_API_KEY, PAGESPEED_API_KEY, SERPER_API_KEY
       # Per-sender: SMTP_HOST, SMTP_PORT, SMTP_EMAIL, SMTP_PASSWORD
+      - name: Check sender credentials exist
+        id: check
+        run: |
+          SENDER="${{ steps.sender.outputs.name }}"
+          if [ "$SENDER" = "sender2" ] && [ -z "${{ secrets.SMTP_EMAIL_2 }}" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Sender2 not configured — skipping this run"
+          elif [ "$SENDER" = "sender3" ] && [ -z "${{ secrets.SMTP_EMAIL_3 }}" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Sender3 not configured — skipping this run"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create .env for sender
+        if: steps.check.outputs.skip != 'true'
         run: |
           SENDER="${{ steps.sender.outputs.name }}"
           echo "Using sender: $SENDER"
 
+          # Base config (shared by all senders)
+          cat > .env <<EOF
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          PAGESPEED_API_KEY=${{ secrets.PAGESPEED_API_KEY }}
+          LLM_MODEL=claude-sonnet-4-6
+          SEND_DELAY_SECONDS=30
+          PAGESPEED_DELAY_SECONDS=2
+          SCRAPE_DELAY_SECONDS=1
+          OUTPUT_DIR=output
+          EOF
+
+          # Per-sender overrides
           if [ "$SENDER" = "sender2" ]; then
-            cat > .env <<EOF
-          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
-          PAGESPEED_API_KEY=${{ secrets.PAGESPEED_API_KEY }}
-          SERPER_API_KEY=${{ secrets.SERPER_API_KEY_2 || secrets.SERPER_API_KEY }}
-          SMTP_HOST=${{ secrets.SMTP_HOST_2 || secrets.SMTP_HOST }}
-          SMTP_PORT=${{ secrets.SMTP_PORT_2 || secrets.SMTP_PORT }}
-          SMTP_EMAIL=${{ secrets.SMTP_EMAIL_2 }}
-          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD_2 }}
-          LLM_MODEL=claude-sonnet-4-6
-          SEND_DELAY_SECONDS=30
-          PAGESPEED_DELAY_SECONDS=2
-          SCRAPE_DELAY_SECONDS=1
-          OUTPUT_DIR=output
-          EOF
+            echo "SERPER_API_KEY=${{ secrets.SERPER_API_KEY_2 }}" >> .env
+            echo "SMTP_HOST=${{ secrets.SMTP_HOST_2 }}" >> .env
+            echo "SMTP_PORT=${{ secrets.SMTP_PORT_2 }}" >> .env
+            echo "SMTP_EMAIL=${{ secrets.SMTP_EMAIL_2 }}" >> .env
+            echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD_2 }}" >> .env
           elif [ "$SENDER" = "sender3" ]; then
-            cat > .env <<EOF
-          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
-          PAGESPEED_API_KEY=${{ secrets.PAGESPEED_API_KEY }}
-          SERPER_API_KEY=${{ secrets.SERPER_API_KEY_3 || secrets.SERPER_API_KEY }}
-          SMTP_HOST=${{ secrets.SMTP_HOST_3 || secrets.SMTP_HOST }}
-          SMTP_PORT=${{ secrets.SMTP_PORT_3 || secrets.SMTP_PORT }}
-          SMTP_EMAIL=${{ secrets.SMTP_EMAIL_3 }}
-          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD_3 }}
-          LLM_MODEL=claude-sonnet-4-6
-          SEND_DELAY_SECONDS=30
-          PAGESPEED_DELAY_SECONDS=2
-          SCRAPE_DELAY_SECONDS=1
-          OUTPUT_DIR=output
-          EOF
+            echo "SERPER_API_KEY=${{ secrets.SERPER_API_KEY_3 }}" >> .env
+            echo "SMTP_HOST=${{ secrets.SMTP_HOST_3 }}" >> .env
+            echo "SMTP_PORT=${{ secrets.SMTP_PORT_3 }}" >> .env
+            echo "SMTP_EMAIL=${{ secrets.SMTP_EMAIL_3 }}" >> .env
+            echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD_3 }}" >> .env
           else
-            cat > .env <<EOF
-          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
-          PAGESPEED_API_KEY=${{ secrets.PAGESPEED_API_KEY }}
-          SERPER_API_KEY=${{ secrets.SERPER_API_KEY }}
-          SMTP_HOST=${{ secrets.SMTP_HOST }}
-          SMTP_PORT=${{ secrets.SMTP_PORT }}
-          SMTP_EMAIL=${{ secrets.SMTP_EMAIL }}
-          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
-          LLM_MODEL=claude-sonnet-4-6
-          SEND_DELAY_SECONDS=30
-          PAGESPEED_DELAY_SECONDS=2
-          SCRAPE_DELAY_SECONDS=1
-          OUTPUT_DIR=output
-          EOF
+            echo "SERPER_API_KEY=${{ secrets.SERPER_API_KEY }}" >> .env
+            echo "SMTP_HOST=${{ secrets.SMTP_HOST }}" >> .env
+            echo "SMTP_PORT=${{ secrets.SMTP_PORT }}" >> .env
+            echo "SMTP_EMAIL=${{ secrets.SMTP_EMAIL }}" >> .env
+            echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}" >> .env
           fi
 
       # Download shared progress and sent registry
       - name: Download previous progress
+        if: steps.check.outputs.skip != 'true'
         uses: actions/download-artifact@v4
         with:
           name: campaign-progress
@@ -127,6 +128,7 @@ jobs:
         continue-on-error: true
 
       - name: Download sent registry
+        if: steps.check.outputs.skip != 'true'
         uses: actions/download-artifact@v4
         with:
           name: sent-registry
@@ -134,32 +136,41 @@ jobs:
         continue-on-error: true
 
       - name: Run campaign
+        if: steps.check.outputs.skip != 'true'
         run: |
           SENDER="${{ steps.sender.outputs.name }}"
-          ARGS="campaign --send --confirm-send"
 
-          # Set sender name based on who's sending
+          SEND_FLAG="--send --confirm-send"
+          RESET_FLAG=""
+          SENDER_ARG=""
+          SENDER_FULL_ARG=""
+
           if [ "$SENDER" = "sender2" ]; then
-            ARGS="$ARGS --sender Erik --sender-full 'Erik Pitorak'"
+            SENDER_ARG="Erik"
+            SENDER_FULL_ARG="Erik Pitorak"
           elif [ "$SENDER" = "sender3" ]; then
-            ARGS="$ARGS --sender Sender3 --sender-full 'Sender Three'"
+            SENDER_ARG="Sender3"
+            SENDER_FULL_ARG="Sender Three"
           fi
 
           if [ "${{ inputs.reset }}" = "true" ]; then
-            ARGS="$ARGS --reset"
+            RESET_FLAG="--reset"
           fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then
-            ARGS="campaign"
+            SEND_FLAG=""
           fi
 
-          echo "Running: python audit_agent.py $ARGS"
-          python audit_agent.py $ARGS
+          if [ -n "$SENDER_ARG" ]; then
+            python audit_agent.py campaign $SEND_FLAG $RESET_FLAG --sender "$SENDER_ARG" --sender-full "$SENDER_FULL_ARG"
+          else
+            python audit_agent.py campaign $SEND_FLAG $RESET_FLAG
+          fi
         timeout-minutes: 90
 
       # Upload shared files — all senders read/write the same ones
       - name: Upload progress
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.check.outputs.skip != 'true'
         with:
           name: campaign-progress
           path: output/campaign_progress.json
@@ -167,7 +178,7 @@ jobs:
 
       - name: Upload sent registry
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.check.outputs.skip != 'true'
         with:
           name: sent-registry
           path: output/sent_registry.json
@@ -175,7 +186,7 @@ jobs:
 
       - name: Upload results
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.check.outputs.skip != 'true'
         with:
           name: campaign-results-${{ steps.sender.outputs.name }}-${{ github.run_number }}
           path: |
