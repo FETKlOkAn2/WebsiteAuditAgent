@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # Zoho SMTP settings
 ZOHO_SMTP_HOST = os.getenv("SMTP_HOST", "smtp.zoho.com")
-ZOHO_SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
+ZOHO_SMTP_PORT = int(os.getenv("SMTP_PORT") or "465")
 ZOHO_EMAIL = os.getenv("SMTP_EMAIL", "tomasmaxim@emtdstudio.com")
 ZOHO_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SEND_DELAY = float(os.getenv("SEND_DELAY_SECONDS", "30"))

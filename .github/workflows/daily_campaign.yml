@@ -97,23 +97,21 @@ jobs:
           OUTPUT_DIR=output
           EOF
 
-          # Per-sender overrides
+          # Shared defaults (same for everyone unless overridden)
+          echo "SMTP_HOST=${{ secrets.SMTP_HOST }}" >> .env
+          echo "SMTP_PORT=${{ secrets.SMTP_PORT }}" >> .env
+
+          # Per-sender: email, password, and optionally their own Serper key
           if [ "$SENDER" = "sender2" ]; then
             echo "SERPER_API_KEY=${{ secrets.SERPER_API_KEY_2 }}" >> .env
-            echo "SMTP_HOST=${{ secrets.SMTP_HOST_2 }}" >> .env
-            echo "SMTP_PORT=${{ secrets.SMTP_PORT_2 }}" >> .env
             echo "SMTP_EMAIL=${{ secrets.SMTP_EMAIL_2 }}" >> .env
             echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD_2 }}" >> .env
           elif [ "$SENDER" = "sender3" ]; then
             echo "SERPER_API_KEY=${{ secrets.SERPER_API_KEY_3 }}" >> .env
-            echo "SMTP_HOST=${{ secrets.SMTP_HOST_3 }}" >> .env
-            echo "SMTP_PORT=${{ secrets.SMTP_PORT_3 }}" >> .env
             echo "SMTP_EMAIL=${{ secrets.SMTP_EMAIL_3 }}" >> .env
             echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD_3 }}" >> .env
           else
             echo "SERPER_API_KEY=${{ secrets.SERPER_API_KEY }}" >> .env
-            echo "SMTP_HOST=${{ secrets.SMTP_HOST }}" >> .env
-            echo "SMTP_PORT=${{ secrets.SMTP_PORT }}" >> .env
             echo "SMTP_EMAIL=${{ secrets.SMTP_EMAIL }}" >> .env
             echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}" >> .env
           fi
