@@ -42,43 +42,52 @@ Lead scoring guide:
 """
 
 EMAIL_GENERATION_PROMPT = """\
-You are writing a cold outreach email for a web agency. Your goal is to get a REPLY, not a sale. The email must feel like a real person wrote it after genuinely looking at their website.
+Write a cold email from a web agency. Goal: get a REPLY, not close a sale.
 
-## Core Strategy
-Pick ONE of these angles (whichever fits the findings best):
-- CURIOSITY: Tease a finding, make them want to know more
-- COMPETITOR: Frame their site vs. what customers expect in their industry
-- DIRECT VALUE: Drop 2-3 specific findings as a free value bomb
+## HARD CONSTRAINTS (violating any = failure)
+1. EXACTLY 60-90 words. Count them. Not 91, not 59.
+2. Subject line: 3-5 words max. Lowercase except proper nouns. No colons.
+3. First line: jump straight into a specific finding. NO greeting like "Hey" or "Hi".
+4. Last line: just "{sender_name}" — nothing else. No company name, no title, no "Cheers", no "Best".
+5. ONE question in the entire email, at the end, as the CTA.
+6. NO exclamation marks anywhere.
+7. NEVER use these phrases: "no strings attached", "happy to", "I'd love to", "I came across", "I noticed", "hope this finds you", "quick question", "free audit", "mini-audit", "complimentary"
+8. NEVER use these words: leverage, synergy, optimize, growth, elevate, boost, enhance, streamline
 
-## Strict Rules
-- MAX 120 words. Shorter = higher reply rate. Every word must earn its place.
-- First sentence must reference something SPECIFIC about their actual site or business
-- NEVER open with "I came across your website" or "I noticed your site" or "Hope this finds you well"
-- Reference 1-2 concrete issues with REAL numbers from the audit (load time, missing tags, etc.)
-- Frame everything as LOST CUSTOMERS or LOST REVENUE, not technical problems
-- Soft CTA only: "Happy to share" / "Want me to send the full breakdown?" / "Worth a quick look?"
-- Sign off with just first name + company. No title, no phone, no links. Keep it casual.
-- NO words: "leverage", "synergy", "optimize", "drive growth", "take your business", "next level"
-- NO exclamation marks. Period.
-- Tone: like a knowledgeable friend texting about something they found. Not a salesperson.
-- The email should make them think: "Huh, this person actually looked at my site."
+## TONE
+Write like you're texting a friend about something you found. Short sentences. Casual. No sales energy at all. Imagine you literally just looked at their site and are telling them what you saw.
 
-## Output Format (JSON)
-Return a JSON object:
+## STRATEGY
+Pick ONE angle:
+- QUESTION: Ask about a specific finding as if you're curious ("Is your mobile site intentionally...?")
+- OBSERVATION: Share 1 concrete finding with a number, then connect it to lost customers
+- COMPARISON: "Most [niche] sites in [city] load under 3s. Yours is at 8.2s."
+
+## EXAMPLES (study the length and tone)
+
+Example A (observation):
+Subject: slow mobile site
+Your site takes 7.1 seconds to load on mobile. That's roughly 60% of visitors leaving before they see anything.\n\nThe fix is usually straightforward — uncompressed images and render-blocking scripts are the usual culprits.\n\nWant me to send over what I found?\n\n{sender_name}
+
+Example B (question):
+Subject: missing booking page
+Ran your site through a speed test — 42 on mobile performance. The bigger thing though: there's no way to book online from the homepage.\n\nFor a {niche_placeholder} that's a lot of potential clients bouncing to someone with a "Book Now" button.\n\nWorth a quick look at what I found?\n\n{sender_name}
+
+Example C (comparison):
+Subject: your site vs competitors
+Most dental offices in Austin load under 3 seconds. Yours took 6.8s on my test, and the mobile layout has some overlap issues.\n\nNot a huge lift to fix, but it's probably costing you some new patient inquiries.\n\nShould I send the details?\n\n{sender_name}
+
+## OUTPUT (JSON only, no markdown)
 {{
-  "subject_line": "Short, specific to THEIR business (under 6 words, no clickbait)",
-  "email_body": "The full email text with line breaks as \\n",
-  "follow_up_subject": "Subject for a follow-up 4 days later (reference the first email)",
-  "follow_up_body": "Even shorter follow-up (under 60 words). Assume they saw but didn't reply. Add one new specific finding they haven't seen yet. No guilt-tripping."
+  "subject_line": "3-5 word subject, lowercase",
+  "email_body": "The full email (60-90 words). Use \\n for line breaks. End with just {sender_name}.",
+  "follow_up_subject": "Re: [original subject]",
+  "follow_up_body": "Under 40 words. Reference the first email. Add one new finding. End with {sender_name}."
 }}
 
-## Website Info
+## INPUT DATA
 URL: {url}
-Business/Site Name: {site_name}
-
-## Audit Findings
-{findings}
-
-## Sender Info
-Name: {sender_name} from {agency_name}
+Business: {site_name}
+Findings: {findings}
+Sender: {sender_name}
 """

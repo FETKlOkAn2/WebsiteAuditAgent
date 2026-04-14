@@ -84,9 +84,8 @@ def generate_email(
         url=url,
         site_name=site_name,
         findings=json.dumps(findings, indent=2),
-        agency_name=agency_name,
         sender_name=sender_name,
-        sender_title=sender_title,
+        niche_placeholder="{niche}",
     )
 
     logger.info(f"Generating email for {url}")
@@ -94,6 +93,19 @@ def generate_email(
     try:
         response = _call_llm(prompt)
         result = _parse_json_response(response)
+
+        # Validate and fix common LLM issues
+        body = result.get("email_body", "")
+        body = _clean_email_body(body, sender_name)
+        result["email_body"] = body
+
+        word_count = len(body.replace("\\n", " ").split())
+        if word_count > 110:
+            logger.warning(f"Email for {url} is {word_count} words (limit 90) — regenerating")
+            response = _call_llm(prompt + "\n\nCRITICAL: Your previous attempt was too long. This MUST be under 90 words.")
+            result = _parse_json_response(response)
+            result["email_body"] = _clean_email_body(result.get("email_body", ""), sender_name)
+
         return result
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse email response as JSON: {e}")
@@ -110,6 +122,28 @@ def generate_email(
             "email_body": "",
             "error": str(e),
         }
+
+
+def _clean_email_body(body: str, sender_name: str) -> str:
+    """Remove common LLM additions that hurt deliverability."""
+    lines = body.replace("\\n", "\n").split("\n")
+    cleaned = []
+    for line in lines:
+        stripped = line.strip().lower()
+        # Remove title/company from sign-off (e.g. "Founder, EMTD Studio")
+        if any(kw in stripped for kw in ["founder", "ceo", "owner", "director", "emtd", "studio", "agency"]):
+            if len(stripped.split()) <= 5:  # only skip short sign-off lines
+                continue
+        # Remove "no strings attached" and similar
+        if "no strings attached" in stripped:
+            line = line.replace("no strings attached", "").replace("No strings attached", "")
+            line = line.replace(" — .", ".").replace(" — ,", ",").replace("  ", " ").strip()
+            if not line or line in (".", ",", "—"):
+                continue
+        cleaned.append(line)
+    result = "\n".join(cleaned)
+    # Re-encode for JSON storage
+    return result.replace("\n", "\\n")
 
 
 def _format_audit_for_llm(audit: dict) -> str:

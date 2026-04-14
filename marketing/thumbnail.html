@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1200px;
+    height: 630px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 50%, #16213e 100%);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Subtle grid background */
+  body::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .container {
+    text-align: center;
+    z-index: 1;
+    padding: 60px;
+  }
+
+  .badge {
+    display: inline-block;
+    background: rgba(99, 102, 241, 0.15);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    color: #818cf8;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 8px 20px;
+    border-radius: 100px;
+    margin-bottom: 30px;
+  }
+
+  h1 {
+    color: #ffffff;
+    font-size: 58px;
+    font-weight: 800;
+    line-height: 1.15;
+    max-width: 900px;
+    margin: 0 auto 25px;
+  }
+
+  h1 span {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    color: #94a3b8;
+    font-size: 22px;
+    font-weight: 400;
+    max-width: 700px;
+    margin: 0 auto;
+    line-height: 1.5;
+  }
+
+  /* Decorative elements */
+  .glow {
+    position: absolute;
+    width: 300px;
+    height: 300px;
+    border-radius: 50%;
+    filter: blur(100px);
+    opacity: 0.15;
+  }
+  .glow-1 { background: #6366f1; top: -100px; right: -50px; }
+  .glow-2 { background: #8b5cf6; bottom: -100px; left: -50px; }
+
+  .terminal {
+    position: absolute;
+    bottom: 30px;
+    right: 40px;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 12px 18px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 13px;
+    color: #4ade80;
+  }
+</style>
+</head>
+<body>
+  <div class="glow glow-1"></div>
+  <div class="glow glow-2"></div>
+
+  <div class="container">
+    <div class="badge">AI-Powered Outreach</div>
+    <h1>I Built an AI Agent That <span>Finds Bad Websites</span> and Emails Them</h1>
+    <p class="subtitle">Automated prospecting, real audits, personalized cold emails — running on autopilot every day.</p>
+  </div>
+
+  <div class="terminal">$ python audit_agent.py campaign --send</div>
+</body>
+</html>

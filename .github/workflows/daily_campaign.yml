@@ -2,8 +2,8 @@ name: Daily Campaign
 
 # Runs 3 times a day — one sender per run
 # 9:00 UTC (11:00 Bratislava) = Tomas
-# 12:00 UTC (14:00 Bratislava) = Sender 2
-# 15:00 UTC (17:00 Bratislava) = Sender 3
+# 12:00 UTC (14:00 Bratislava) = Erik
+# 15:00 UTC (17:00 Bratislava) = Michal
 on:
   schedule:
     - cron: '0 9 * * *'
@@ -16,8 +16,8 @@ on:
         type: choice
         options:
           - tomas
-          - sender2
-          - sender3
+          - erik
+          - michal
         default: tomas
       reset:
         description: 'Reset progress and start from scratch'
@@ -59,9 +59,9 @@ jobs:
             if [ "$HOUR" -ge 9 ] && [ "$HOUR" -lt 12 ]; then
               echo "name=tomas" >> $GITHUB_OUTPUT
             elif [ "$HOUR" -ge 12 ] && [ "$HOUR" -lt 15 ]; then
-              echo "name=sender2" >> $GITHUB_OUTPUT
+              echo "name=erik" >> $GITHUB_OUTPUT
             else
-              echo "name=sender3" >> $GITHUB_OUTPUT
+              echo "name=michal" >> $GITHUB_OUTPUT
             fi
           fi
 
@@ -72,12 +72,12 @@ jobs:
         id: check
         run: |
           SENDER="${{ steps.sender.outputs.name }}"
-          if [ "$SENDER" = "sender2" ] && [ -z "${{ secrets.SMTP_EMAIL_2 }}" ]; then
+          if [ "$SENDER" = "erik" ] && [ -z "${{ secrets.SMTP_EMAIL_2 }}" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "Sender2 not configured — skipping this run"
-          elif [ "$SENDER" = "sender3" ] && [ -z "${{ secrets.SMTP_EMAIL_3 }}" ]; then
+            echo "Erik not configured — skipping this run"
+          elif [ "$SENDER" = "michal" ] && [ -z "${{ secrets.SMTP_EMAIL_3 }}" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "Sender3 not configured — skipping this run"
+            echo "Michal not configured — skipping this run"
           else
             echo "skip=false" >> $GITHUB_OUTPUT
           fi
@@ -104,11 +104,11 @@ jobs:
           echo "SMTP_PORT=${{ secrets.SMTP_PORT }}" >> .env
 
           # Per-sender: email, password, and optionally their own Serper key
-          if [ "$SENDER" = "sender2" ]; then
+          if [ "$SENDER" = "erik" ]; then
             echo "SERPER_API_KEY=${{ secrets.SERPER_API_KEY_2 }}" >> .env
             echo "SMTP_EMAIL=${{ secrets.SMTP_EMAIL_2 }}" >> .env
             echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD_2 }}" >> .env
-          elif [ "$SENDER" = "sender3" ]; then
+          elif [ "$SENDER" = "michal" ]; then
             echo "SERPER_API_KEY=${{ secrets.SERPER_API_KEY_3 }}" >> .env
             echo "SMTP_EMAIL=${{ secrets.SMTP_EMAIL_3 }}" >> .env
             echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD_3 }}" >> .env
@@ -145,12 +145,12 @@ jobs:
           SENDER_ARG=""
           SENDER_FULL_ARG=""
 
-          if [ "$SENDER" = "sender2" ]; then
+          if [ "$SENDER" = "erik" ]; then
             SENDER_ARG="Erik"
             SENDER_FULL_ARG="Erik Pitorak"
-          elif [ "$SENDER" = "sender3" ]; then
-            SENDER_ARG="Sender3"
-            SENDER_FULL_ARG="Sender Three"
+          elif [ "$SENDER" = "michal" ]; then
+            SENDER_ARG="Michal"
+            SENDER_FULL_ARG="Michal Pipa"
           fi
 
           if [ "${{ inputs.reset }}" = "true" ]; then

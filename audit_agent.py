@@ -275,7 +275,7 @@ def _prepare_send_list(audit_results: list[dict], contacts: dict = None) -> list
         if r.get("skipped_reason"):
             continue
         email_data = r.get("email") or {}
-        subject = email_data.get("subject_line", "")
+        subject = email_data.get("subject_line", "").strip().strip('"').strip("'")
         body = email_data.get("email_body", "").replace("\\n", "\n")
         url = r.get("url", "")
 

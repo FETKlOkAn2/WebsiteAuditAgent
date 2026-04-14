@@ -17,7 +17,6 @@ import smtplib
 import time
 from datetime import datetime
 from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 import config
 
@@ -60,15 +59,12 @@ def send_single(
         logger.info(f"[DRY RUN] Would send to {to_email}: {subject}")
         return result
 
-    msg = MIMEMultipart("alternative")
+    msg = MIMEText(body, "plain", "utf-8")
     msg["From"] = f"{from_name} <{ZOHO_EMAIL}>"
     msg["To"] = to_email
     msg["Subject"] = subject
     if reply_to:
         msg["Reply-To"] = reply_to
-
-    # Plain text only — better deliverability for cold email
-    msg.attach(MIMEText(body, "plain", "utf-8"))
 
     try:
         server = _connect_smtp()
@@ -143,11 +139,10 @@ def send_batch(
             logger.info(f"[DRY RUN] [{i}/{total}] → {to}: {subject}")
         else:
             try:
-                msg = MIMEMultipart("alternative")
+                msg = MIMEText(body, "plain", "utf-8")
                 msg["From"] = f"{from_name} <{ZOHO_EMAIL}>"
                 msg["To"] = to
                 msg["Subject"] = subject
-                msg.attach(MIMEText(body, "plain", "utf-8"))
 
                 server.sendmail(ZOHO_EMAIL, to, msg.as_string())
                 result["status"] = "sent"
