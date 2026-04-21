@@ -118,6 +118,11 @@ jobs:
             echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}" >> .env
           fi
 
+      # Ensure output dir exists so uploads never fail on missing files
+      - name: Ensure output directory
+        if: steps.check.outputs.skip != 'true'
+        run: mkdir -p output
+
       # Download shared progress and sent registry
       - name: Download previous progress
         if: steps.check.outputs.skip != 'true'
@@ -175,6 +180,7 @@ jobs:
           name: campaign-progress
           path: output/campaign_progress.json
           overwrite: true
+          if-no-files-found: warn
 
       - name: Upload sent registry
         uses: actions/upload-artifact@v4
@@ -183,6 +189,7 @@ jobs:
           name: sent-registry
           path: output/sent_registry.json
           overwrite: true
+          if-no-files-found: warn
 
       - name: Upload results
         uses: actions/upload-artifact@v4
@@ -193,3 +200,4 @@ jobs:
             output/*.json
             output/*.csv
           retention-days: 30
+          if-no-files-found: warn

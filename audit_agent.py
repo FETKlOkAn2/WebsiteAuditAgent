@@ -624,6 +624,11 @@ def cmd_campaign(args):
     completed = set(progress.get("completed", []))
     today_usage = _get_today_usage(progress)
 
+    # Always flush both files immediately so upload-artifact never fails on missing files
+    _save_campaign_progress(progress)
+    registry = _load_sent_registry()
+    _save_sent_registry(registry)
+
     # Filter out already-completed combos (unless --reset)
     if args.reset:
         completed = set()
