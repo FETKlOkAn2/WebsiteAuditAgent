@@ -201,7 +201,10 @@ def load_emails_from_audit_json(filepath: str) -> list[dict]:
 
     emails = []
     for r in results:
-        email_data = r.get("email", {})
+        # Use `or {}` so explicit None entries (from skipped/errored audits)
+        # don't crash on .get(). r.get("email", {}) returns None when the key
+        # is present with value None — silent foot-gun in cold-outreach data.
+        email_data = r.get("email") or {}
         subject = email_data.get("subject_line", "")
         body = email_data.get("email_body", "")
 
