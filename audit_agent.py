@@ -121,11 +121,20 @@ def process_single(
     sender_name: str = "Tomas",
     sender_title: str = "Founder",
     require_email: bool = False,
+    audit_mode: str = "v1",
+    lang: str = "en",
+    niche: str = "",
+    location: str = "",
 ) -> dict:
     """
     Full audit pipeline for a single URL.
-    If require_email=True, skips the expensive LLM analysis when no
-    contact email can be found (saves Anthropic tokens).
+
+    Args:
+        audit_mode: "v1" (legacy PageSpeed-driven prompt) or
+                    "v2" (fact-grounded conversion-audit prompt).
+        lang:       "en" or "sk" — only meaningful for v2.
+        niche/location: forwarded to the conversion auditor for personalization.
+        require_email:  if True, skip LLM when no contact email is found.
     """
     audit = analyze_website(url, skip_pagespeed=skip_pagespeed)
 
@@ -148,6 +157,60 @@ def process_single(
         from urllib.parse import urlparse
         site_name = urlparse(url).netloc.replace("www.", "")
 
+    if audit_mode == "v2":
+        # Fact-grounded path. Needs the raw HTML — re-fetch only if scraper
+        # didn't keep it. analyze_website doesn't currently store html on the
+        # result, so we fetch once via the scraper.
+        from scraper import fetch_html
+        fetch = fetch_html(url)
+        html = fetch.get("html") or ""
+
+        from analyzer_v2 import generate_email_v2
+        v2 = generate_email_v2(
+            html=html, url=url, site_name=site_name,
+            niche=niche, location=location,
+            sender_name=sender_name, lang=lang,
+        )
+
+        # Map v2 output onto the existing schema so the rest of the pipeline
+        # (output, sender, registry) doesn't change.
+        audit["analysis"] = {
+            "issues": [],  # v2 doesn't produce v1-style issues; left empty
+            "overall_impression": "v2: " + (
+                v2.get("skipped_reason") or
+                f"validation passed={v2['validation']['passed']}, "
+                f"quoted={len(v2['validation']['quoted_facts'])}"
+            ),
+            "lead_score": 0,
+            "facts": v2.get("facts"),
+            "validation": v2.get("validation"),
+            "audit_mode": "v2",
+            "lang": lang,
+        }
+
+        if v2.get("skipped_reason"):
+            # Mark this prospect as skipped. _prepare_send_list will drop it.
+            audit["email"] = None
+            audit["skipped_reason"] = v2["skipped_reason"]
+        elif not v2["validation"]["passed"]:
+            # We got an email but it isn't grounded — still return it but flag
+            audit["email"] = {
+                "subject_line": v2["subject_line"],
+                "email_body": v2["email_body"],
+                "follow_up_subject": v2["follow_up_subject"],
+                "follow_up_body": v2["follow_up_body"],
+            }
+            audit["skipped_reason"] = "v2_validation_failed"
+        else:
+            audit["email"] = {
+                "subject_line": v2["subject_line"],
+                "email_body": v2["email_body"],
+                "follow_up_subject": v2["follow_up_subject"],
+                "follow_up_body": v2["follow_up_body"],
+            }
+        return audit
+
+    # ---- legacy v1 path (unchanged) ----
     analysis = analyze_audit_data(audit)
     audit["analysis"] = analysis
 
@@ -171,6 +234,10 @@ def run_batch(
     sender_name: str = "Tomas",
     sender_title: str = "Founder",
     require_email: bool = False,
+    audit_mode: str = "v1",
+    lang: str = "en",
+    niche: str = "",
+    location: str = "",
 ) -> list[dict]:
     """Process a batch of URLs with rate limiting."""
     results = []
@@ -187,17 +254,18 @@ def run_batch(
             url=url, name=name, skip_pagespeed=skip_pagespeed,
             agency_name=agency_name, sender_name=sender_name,
             sender_title=sender_title, require_email=require_email,
+            audit_mode=audit_mode, lang=lang, niche=niche, location=location,
         )
         results.append(result)
 
-        if result.get("skipped_reason") == "no_contact_email":
+        if result.get("skipped_reason"):
             skipped += 1
 
         if i < total:
             time.sleep(config.SCRAPE_DELAY)
 
     if skipped:
-        logger.info(f"Skipped LLM analysis for {skipped}/{total} sites (no contact email)")
+        logger.info(f"Skipped LLM analysis for {skipped}/{total} sites")
 
     return results
 
@@ -370,6 +438,10 @@ def cmd_audit(args):
         urls=urls, skip_pagespeed=args.skip_pagespeed,
         agency_name=args.agency, sender_name=args.sender,
         sender_title=args.title,
+        audit_mode=getattr(args, "audit_mode", "v1"),
+        lang=getattr(args, "lang", "en"),
+        niche=getattr(args, "niche", "") or "",
+        location=getattr(args, "location", "") or "",
     )
 
     json_path = save_json(results, args.output_json)
@@ -488,6 +560,9 @@ def cmd_pipeline(args):
         urls=urls, skip_pagespeed=args.skip_pagespeed,
         agency_name=args.agency, sender_name=args.sender,
         sender_title=args.title, require_email=True,
+        audit_mode=getattr(args, "audit_mode", "v1"),
+        lang=getattr(args, "lang", "en"),
+        niche=args.niche, location=args.location or "",
     )
 
     json_path = save_json(results)
@@ -724,6 +799,10 @@ def cmd_campaign(args):
                 sender_name=args.sender,
                 sender_title=args.title,
                 require_email=True,
+                audit_mode=getattr(args, "audit_mode", "v1"),
+                lang=getattr(args, "lang", "en"),
+                niche=niche,
+                location=location,
             )
 
             today_usage["pagespeed_calls"] += top_n
@@ -847,6 +926,12 @@ Examples:
     p_audit.add_argument("--title", default="Founder", help="Sender title")
     p_audit.add_argument("--output-json", help="Custom JSON output filename")
     p_audit.add_argument("--output-csv", help="Custom CSV output filename")
+    p_audit.add_argument("--audit-mode", choices=["v1", "v2"], default="v1",
+                         help="v1=legacy PageSpeed prompt, v2=fact-grounded conversion audit")
+    p_audit.add_argument("--lang", choices=["en", "sk"], default="en",
+                         help="Email language (only used in v2 mode)")
+    p_audit.add_argument("--niche", default="", help="Niche hint (used in v2 mode)")
+    p_audit.add_argument("--location", default="", help="Location hint (used in v2 mode)")
     p_audit.set_defaults(func=cmd_audit)
 
     # --- send ---
@@ -898,6 +983,10 @@ Examples:
     p_pipeline.add_argument("--send", action="store_true", help="Enable send step")
     p_pipeline.add_argument("--contacts", help="Contacts CSV (required with --send)")
     p_pipeline.add_argument("--confirm-send", action="store_true", help="Actually send (default is dry-run)")
+    p_pipeline.add_argument("--audit-mode", choices=["v1", "v2"], default="v1",
+                            help="v1=legacy, v2=fact-grounded (recommended)")
+    p_pipeline.add_argument("--lang", choices=["en", "sk"], default="en",
+                            help="Email language (only used in v2 mode)")
     p_pipeline.set_defaults(func=cmd_pipeline)
 
     # --- campaign ---
@@ -943,6 +1032,10 @@ Examples:
     p_campaign.add_argument("--send", action="store_true", help="Enable email sending")
     p_campaign.add_argument("--confirm-send", action="store_true", help="Actually send (default is dry-run)")
     p_campaign.add_argument("--reset", action="store_true", help="Reset progress and start from scratch")
+    p_campaign.add_argument("--audit-mode", choices=["v1", "v2"], default="v2",
+                            help="v1=legacy PageSpeed prompt, v2=fact-grounded (default)")
+    p_campaign.add_argument("--lang", choices=["en", "sk"], default="sk",
+                            help="Email language (default: sk for the SK pipeline)")
     p_campaign.set_defaults(func=cmd_campaign)
 
     args = parser.parse_args()
