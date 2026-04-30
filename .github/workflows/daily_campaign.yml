@@ -1,14 +1,17 @@
 name: Daily Campaign
 
-# Runs 3 times a day — one sender per run
-# 9:00 UTC (11:00 Bratislava) = Tomas
-# 12:00 UTC (14:00 Bratislava) = Erik
-# 15:00 UTC (17:00 Bratislava) = Michal
+# PAUSED 2026-04-30 — sender reputation degraded (mailer-daemon bounces).
+# Re-enable by uncommenting the schedule block below once:
+#   1. Bounce rate is verified <3% in Zoho admin
+#   2. SPF/DKIM/DMARC are confirmed on emtdstudio.com
+#   3. SK pipeline is live (lower-volume, native-language, less spam-suspect)
+#
+# Until then, the workflow runs ONLY on manual dispatch.
 on:
-  schedule:
-    - cron: '0 9 * * *'
-    - cron: '0 12 * * *'
-    - cron: '0 15 * * *'
+  # schedule:
+  #   - cron: '0 9 * * *'   # 11:00 Bratislava — Tomas
+  #   - cron: '0 12 * * *'  # 14:00 Bratislava — Erik
+  #   - cron: '0 15 * * *'  # 17:00 Bratislava — Michal
   workflow_dispatch:
     inputs:
       sender:
