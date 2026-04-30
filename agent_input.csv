@@ -1,253 +1,189 @@
 niche,location
-medspa,Scottsdale
-medspa,Houston
-medspa,Atlanta
-medspa,Miami
-medspa,Dallas
-medspa,Los Angeles
-medspa,Toronto
-medspa,Calgary
-dentist,Miami
-dentist,Austin
-dentist,Denver
-dentist,San Diego
-dentist,Phoenix
-dentist,Jacksonville
-dentist,Toronto
-dentist,Vancouver
-dentist,London
-dentist,Manchester
-dentist,Sydney
-dentist,Melbourne
-chiropractor,Dallas
-chiropractor,Nashville
-chiropractor,Charlotte
-chiropractor,Tampa
-chiropractor,Portland
-chiropractor,Calgary
-chiropractor,Ottawa
-dermatologist,San Francisco
-dermatologist,Seattle
-dermatologist,Boston
-dermatologist,Austin
-dermatologist,Denver
-plastic surgeon,Beverly Hills
-plastic surgeon,Miami
-plastic surgeon,Dallas
-plastic surgeon,New York
-plastic surgeon,Chicago
-orthodontist,Phoenix
-orthodontist,Jacksonville
-orthodontist,Salt Lake City
-orthodontist,Charlotte
-orthodontist,Nashville
-veterinarian,Orlando
-veterinarian,Raleigh
-veterinarian,Minneapolis
-veterinarian,San Antonio
-veterinarian,Columbus
-physical therapist,Denver
-physical therapist,Austin
-physical therapist,San Diego
-physical therapist,Nashville
-physical therapist,Portland
-plumber,Los Angeles
-plumber,Chicago
-plumber,Denver
-plumber,San Antonio
-plumber,Las Vegas
-plumber,Toronto
-plumber,London
-plumber,Sydney
-electrician,Austin
-electrician,Nashville
-electrician,Charlotte
-electrician,Raleigh
-electrician,Portland
-electrician,London
-electrician,Melbourne
-hvac company,Phoenix
-hvac company,Houston
-hvac company,Tampa
-hvac company,Dallas
-hvac company,Las Vegas
-hvac company,Calgary
-roofing company,Dallas
-roofing company,Houston
-roofing company,Phoenix
-roofing company,Atlanta
-roofing company,Orlando
-landscaping company,Scottsdale
-landscaping company,Orlando
-landscaping company,Dallas
-landscaping company,Atlanta
-landscaping company,San Diego
-pest control,Houston
-pest control,Phoenix
-pest control,Orlando
-pest control,Tampa
-pest control,Las Vegas
-pool company,Scottsdale
-pool company,Miami
-pool company,Houston
-pool company,Orlando
-pool company,San Antonio
-solar company,Phoenix
-solar company,Las Vegas
-solar company,San Diego
-solar company,Austin
-solar company,Denver
-personal injury lawyer,Houston
-personal injury lawyer,Los Angeles
-personal injury lawyer,Miami
-personal injury lawyer,Atlanta
-personal injury lawyer,Dallas
-family lawyer,Phoenix
-family lawyer,Denver
-family lawyer,San Antonio
-family lawyer,Jacksonville
-family lawyer,Tampa
-immigration lawyer,Miami
-immigration lawyer,New York
-immigration lawyer,Los Angeles
-immigration lawyer,Houston
-immigration lawyer,Chicago
-solicitor,London
-solicitor,Birmingham
-solicitor,Manchester
-real estate agent,Miami
-real estate agent,Austin
-real estate agent,Scottsdale
-real estate agent,San Diego
-real estate agent,Boise
-real estate agent,Toronto
-real estate agent,Vancouver
-real estate agent,London
-real estate agent,Manchester
-real estate agent,Sydney
-real estate agent,Melbourne
-home builder,Austin
-home builder,Raleigh
-home builder,Boise
-home builder,Nashville
-home builder,Charlotte
-interior designer,Los Angeles
-interior designer,Miami
-interior designer,New York
-interior designer,Austin
-interior designer,Nashville
-accountant,Austin
-accountant,Charlotte
-accountant,Denver
-accountant,Nashville
-accountant,Raleigh
-accountant,London
-accountant,Manchester
-financial advisor,Scottsdale
-financial advisor,San Diego
-financial advisor,Boston
-financial advisor,Seattle
-financial advisor,Dallas
-insurance agent,Dallas
-insurance agent,Houston
-insurance agent,Atlanta
-insurance agent,Charlotte
-insurance agent,Tampa
-cleaning company,Dallas
-cleaning company,Houston
-cleaning company,Phoenix
-cleaning company,Orlando
-cleaning company,Charlotte
-moving company,Austin
-moving company,Denver
-moving company,Raleigh
-moving company,Nashville
-moving company,Tampa
-gym,Miami
-gym,Austin
-gym,Denver
-gym,San Diego
-gym,Nashville
-yoga studio,Los Angeles
-yoga studio,Portland
-yoga studio,Austin
-yoga studio,Boulder
-yoga studio,Seattle
-personal trainer,Miami
-personal trainer,Scottsdale
-personal trainer,Dallas
-personal trainer,San Diego
-personal trainer,Atlanta
-dog groomer,Austin
-dog groomer,Denver
-dog groomer,Portland
-dog groomer,San Diego
-dog groomer,Raleigh
-daycare,Austin
-daycare,Raleigh
-daycare,Charlotte
-daycare,Nashville
-daycare,Denver
-tutoring service,San Francisco
-tutoring service,Boston
-tutoring service,New York
-tutoring service,Austin
-tutoring service,Seattle
-wedding photographer,Austin
-wedding photographer,Nashville
-wedding photographer,Charleston
-wedding photographer,Denver
-wedding photographer,San Diego
-photographer,Los Angeles
-photographer,Miami
-photographer,Portland
-photographer,Seattle
-photographer,Atlanta
-massage therapist,Scottsdale
-massage therapist,Austin
-massage therapist,San Diego
-massage therapist,Portland
-massage therapist,Boulder
-tattoo shop,Austin
-tattoo shop,Portland
-tattoo shop,Nashville
-tattoo shop,Miami
-tattoo shop,Denver
-barbershop,Houston
-barbershop,Atlanta
-barbershop,Miami
-barbershop,Nashville
-barbershop,Denver
-barbershop,Phoenix
-hair salon,Los Angeles
-hair salon,Miami
-hair salon,Austin
-hair salon,Scottsdale
-hair salon,Charlotte
-hair salon,Portland
-nail salon,Houston
-nail salon,Dallas
-nail salon,Orlando
-nail salon,Phoenix
-nail salon,Las Vegas
-nail salon,Tampa
-restaurant,Austin
-restaurant,Nashville
-restaurant,Portland
-restaurant,Denver
-restaurant,Charleston
-coffee shop,Seattle
-coffee shop,Portland
-coffee shop,Austin
-coffee shop,Denver
-coffee shop,San Diego
-car dealership,Houston
-car dealership,Dallas
-car dealership,Phoenix
-car dealership,Atlanta
-car dealership,Miami
-auto repair shop,San Antonio
-auto repair shop,Las Vegas
-auto repair shop,Jacksonville
-auto repair shop,Columbus
-auto repair shop,Tampa
+restauracia,Bratislava
+restauracia,Kosice
+restauracia,Zilina
+restauracia,Presov
+restauracia,Banska Bystrica
+restauracia,Trnava
+restauracia,Nitra
+restauracia,Trencin
+kaviaren,Bratislava
+kaviaren,Kosice
+kaviaren,Zilina
+kaviaren,Presov
+kaviaren,Banska Bystrica
+kaviaren,Trnava
+kaviaren,Nitra
+fitness centrum,Bratislava
+fitness centrum,Kosice
+fitness centrum,Zilina
+fitness centrum,Banska Bystrica
+fitness centrum,Trnava
+fitness centrum,Nitra
+joga studio,Bratislava
+joga studio,Kosice
+joga studio,Zilina
+crossfit,Bratislava
+crossfit,Kosice
+kadernictvo,Bratislava
+kadernictvo,Kosice
+kadernictvo,Zilina
+kadernictvo,Presov
+kadernictvo,Banska Bystrica
+kadernictvo,Trnava
+kadernictvo,Nitra
+kadernictvo,Trencin
+barber shop,Bratislava
+barber shop,Kosice
+barber shop,Zilina
+nechtove studio,Bratislava
+nechtove studio,Kosice
+nechtove studio,Zilina
+kozmeticky salon,Bratislava
+kozmeticky salon,Kosice
+kozmeticky salon,Zilina
+kozmeticky salon,Banska Bystrica
+masaze,Bratislava
+masaze,Kosice
+masaze,Zilina
+masaze,Presov
+masaze,Trnava
+zubar,Bratislava
+zubar,Kosice
+zubar,Zilina
+zubar,Presov
+zubar,Banska Bystrica
+zubar,Trnava
+zubar,Nitra
+zubna ambulancia,Bratislava
+zubna ambulancia,Kosice
+zubna ambulancia,Zilina
+ortodoncia,Bratislava
+ortodoncia,Kosice
+fyzioterapia,Bratislava
+fyzioterapia,Kosice
+fyzioterapia,Zilina
+fyzioterapia,Banska Bystrica
+chiropraktik,Bratislava
+chiropraktik,Kosice
+optika,Bratislava
+optika,Kosice
+optika,Zilina
+optika,Presov
+veterina,Bratislava
+veterina,Kosice
+veterina,Zilina
+veterina,Banska Bystrica
+veterina,Trnava
+hotel,Vysoke Tatry
+hotel,Liptov
+hotel,Bratislava
+hotel,Kosice
+hotel,Trencianske Teplice
+penzion,Vysoke Tatry
+penzion,Liptov
+penzion,Orava
+penzion,Donovaly
+penzion,Stiavnica
+wellness,Vysoke Tatry
+wellness,Liptov
+wellness,Trencianske Teplice
+wellness,Piestany
+autoservis,Bratislava
+autoservis,Kosice
+autoservis,Zilina
+autoservis,Presov
+autoservis,Banska Bystrica
+autoservis,Trnava
+autoservis,Nitra
+pneuservis,Bratislava
+pneuservis,Kosice
+pneuservis,Zilina
+karoseria,Bratislava
+karoseria,Kosice
+autoumyvaren,Bratislava
+autoumyvaren,Kosice
+instalater,Bratislava
+instalater,Kosice
+instalater,Zilina
+instalater,Presov
+instalater,Banska Bystrica
+elektrikar,Bratislava
+elektrikar,Kosice
+elektrikar,Zilina
+elektrikar,Presov
+murar,Bratislava
+murar,Kosice
+malovanie a stierkovanie,Bratislava
+malovanie a stierkovanie,Kosice
+zahradnik,Bratislava
+zahradnik,Kosice
+zahradnik,Zilina
+upratovacia firma,Bratislava
+upratovacia firma,Kosice
+upratovacia firma,Zilina
+stahovacia firma,Bratislava
+stahovacia firma,Kosice
+realitna kancelaria,Bratislava
+realitna kancelaria,Kosice
+realitna kancelaria,Zilina
+realitna kancelaria,Banska Bystrica
+realitna kancelaria,Trnava
+realitna kancelaria,Nitra
+advokatska kancelaria,Bratislava
+advokatska kancelaria,Kosice
+advokatska kancelaria,Zilina
+advokatska kancelaria,Banska Bystrica
+notar,Bratislava
+notar,Kosice
+notar,Zilina
+uctovnik,Bratislava
+uctovnik,Kosice
+uctovnik,Zilina
+uctovnik,Banska Bystrica
+uctovnik,Trnava
+financny poradca,Bratislava
+financny poradca,Kosice
+financny poradca,Zilina
+poistovaci agent,Bratislava
+poistovaci agent,Kosice
+fotograf,Bratislava
+fotograf,Kosice
+fotograf,Zilina
+svadobny fotograf,Bratislava
+svadobny fotograf,Kosice
+svadobny fotograf,Zilina
+kvetinarstvo,Bratislava
+kvetinarstvo,Kosice
+kvetinarstvo,Zilina
+kvetinarstvo,Banska Bystrica
+cukraren,Bratislava
+cukraren,Kosice
+cukraren,Zilina
+pekaren,Bratislava
+pekaren,Kosice
+pekaren,Zilina
+psia skola,Bratislava
+psia skola,Kosice
+strihanie psov,Bratislava
+strihanie psov,Kosice
+detska skolka,Bratislava
+detska skolka,Kosice
+detska skolka,Zilina
+jazykova skola,Bratislava
+jazykova skola,Kosice
+jazykova skola,Zilina
+doucovanie,Bratislava
+doucovanie,Kosice
+autoskola,Bratislava
+autoskola,Kosice
+autoskola,Zilina
+autoskola,Banska Bystrica
+tetovacie studio,Bratislava
+tetovacie studio,Kosice
+tetovacie studio,Zilina
+piano studio,Bratislava
+hudobna skola,Bratislava
+hudobna skola,Kosice
+tanecna skola,Bratislava
+tanecna skola,Kosice
