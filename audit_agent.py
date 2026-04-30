@@ -326,20 +326,41 @@ def _already_contacted(registry: dict, email: str, website: str) -> str | None:
     return None
 
 
-def _prepare_send_list(audit_results: list[dict], contacts: dict = None) -> list[dict]:
+def _prepare_send_list(
+    audit_results: list[dict],
+    contacts: dict = None,
+    *,
+    validate_emails: bool = True,
+    probe_from: str = "",
+    keep_risky: bool = False,
+) -> list[dict]:
     """
-    Match audit results with contact emails.
-    Uses contacts CSV if provided, otherwise uses auto-extracted emails from scraping.
-    Skips emails/domains we've already contacted.
-    Returns list of {to, subject, body, website} ready to send.
+    Match audit results with contact emails and validate them.
+
+    Order of operations per result:
+      1. Pick recipient (contacts CSV → scraped emails → drop)
+      2. Skip if already contacted (registry dedup)
+      3. Validate the email — drop invalid + unknown
+         (catch_all and risky are kept by default; risky is configurable)
+
+    Args:
+        validate_emails: run email_validator before sending. Default True.
+            Disable only for offline tests or if dnspython is unavailable.
+        probe_from: MAIL FROM used during SMTP probes. Pass the verifier
+            address on a domain you control (e.g. `verify@emtdstudio.com`).
+            If empty, falls back to `verify@<sender_domain_from_env>`.
+        keep_risky: if True, role-account addresses (info@, support@…) are
+            kept in the send list. Default False — they almost never reply.
+
+    Returns list of {to, subject, body, website, validation: {...}} ready to send.
     """
     from urllib.parse import urlparse
     contacts = contacts or {}
-    send_list = []
     registry = _load_sent_registry()
 
+    # First pass: pick + dedup. Validation is a separate, slower pass.
+    candidates = []
     for r in audit_results:
-        # Skip results that had no LLM analysis (no contact email)
         if r.get("skipped_reason"):
             continue
         email_data = r.get("email") or {}
@@ -350,35 +371,78 @@ def _prepare_send_list(audit_results: list[dict], contacts: dict = None) -> list
         if not subject or not body:
             continue
 
-        # Try contacts CSV first
         domain = urlparse(url).netloc.lower().replace("www.", "")
         contact = contacts.get(domain, {})
         to_email = contact.get("email", "")
-
-        # Fall back to auto-extracted emails from scraping
         if not to_email:
             scraped_emails = r.get("contact_emails", [])
             if scraped_emails:
-                to_email = scraped_emails[0]  # best match (already sorted by priority)
+                to_email = scraped_emails[0]
 
-        if to_email:
-            # Check if already contacted
-            reason = _already_contacted(registry, to_email, url)
-            if reason:
-                logger.info(f"Skipping {url} — {reason}")
-                continue
-
-            send_list.append({
-                "to": to_email,
-                "subject": subject,
-                "body": body,
-                "website": url,
-                "contact_name": contact.get("name", ""),
-            })
-        else:
+        if not to_email:
             logger.warning(f"No contact email found for {url} — skipping send")
+            continue
 
-    return send_list
+        reason = _already_contacted(registry, to_email, url)
+        if reason:
+            logger.info(f"Skipping {url} — {reason}")
+            continue
+
+        candidates.append({
+            "to": to_email,
+            "subject": subject,
+            "body": body,
+            "website": url,
+            "contact_name": contact.get("name", ""),
+        })
+
+    # Second pass: validate, attach validation metadata, drop bad ones.
+    if not validate_emails or not candidates:
+        return candidates
+
+    if not probe_from:
+        # Default: derive a verifier address from the configured SMTP_EMAIL
+        # so probes ride on a domain we own (and not on a third-party domain).
+        from sender import ZOHO_EMAIL
+        sender_domain = (ZOHO_EMAIL or "verify@validator.local").split("@", 1)[-1]
+        probe_from = f"verify@{sender_domain}"
+
+    try:
+        from email_validator import validate_emails as _do_validate
+    except ImportError as e:
+        logger.error(f"email_validator unavailable ({e}) — sending without validation")
+        return candidates
+
+    addresses = [c["to"] for c in candidates]
+    logger.info(
+        f"Validating {len(addresses)} email address(es) before send "
+        f"(probe_from={probe_from})…"
+    )
+    results, stats = _do_validate(
+        addresses, progress=False, probe_from=probe_from,
+    )
+    logger.info(f"  {stats.pretty()}")
+    if stats.invalid_reasons:
+        for reason, n in sorted(stats.invalid_reasons.items(),
+                                 key=lambda x: -x[1])[:5]:
+            logger.info(f"    – {n}× {reason}")
+
+    safe = []
+    for cand, vr in zip(candidates, results):
+        cand["validation"] = vr.to_dict()
+        if vr.status == "valid" or vr.status == "catch_all":
+            safe.append(cand)
+        elif vr.status == "risky":
+            if keep_risky:
+                safe.append(cand)
+            else:
+                logger.info(f"  Dropping risky address {vr.email}: {vr.reason}")
+        else:
+            # invalid or unknown — drop
+            logger.info(f"  Dropping {vr.status} address {vr.email}: {vr.reason}")
+
+    logger.info(f"Validation kept {len(safe)}/{len(candidates)} addresses")
+    return safe
 
 
 # ---------------------------------------------------------------------------
@@ -475,7 +539,12 @@ def cmd_send(args):
     with open(args.audit_json, "r") as f:
         audit_results = json.load(f)
 
-    send_list = _prepare_send_list(audit_results, contacts)
+    send_list = _prepare_send_list(
+        audit_results, contacts,
+        validate_emails=not getattr(args, "no_validate_emails", False),
+        probe_from=getattr(args, "probe_from", "") or "",
+        keep_risky=getattr(args, "keep_risky", False),
+    )
 
     if not send_list:
         print("ERROR: No emails could be matched to contacts")
@@ -577,7 +646,12 @@ def cmd_pipeline(args):
         print(f"{'='*60}\n")
 
         contacts = load_contacts_csv(args.contacts) if args.contacts else {}
-        send_list = _prepare_send_list(results, contacts)
+        send_list = _prepare_send_list(
+            results, contacts,
+            validate_emails=not getattr(args, "no_validate_emails", False),
+            probe_from=getattr(args, "probe_from", "") or "",
+            keep_risky=getattr(args, "keep_risky", False),
+        )
 
         if send_list:
             dry_run = not args.confirm_send
@@ -813,7 +887,12 @@ def cmd_campaign(args):
             # Step 3: Send emails (if enabled)
             if args.send:
                 contacts = {}
-                send_list = _prepare_send_list(results, contacts)
+                send_list = _prepare_send_list(
+                    results, contacts,
+                    validate_emails=not getattr(args, "no_validate_emails", False),
+                    probe_from=getattr(args, "probe_from", "") or "",
+                    keep_risky=getattr(args, "keep_risky", False),
+                )
 
                 if send_list:
                     # Trim to stay within daily email limit
@@ -957,6 +1036,13 @@ contacts.csv format:
     p_send.add_argument("--confirm-send", action="store_true", help="Actually send (default is dry-run)")
     p_send.add_argument("--from-name", default="Tomas Maxim", help="Sender display name")
     p_send.add_argument("--delay", type=float, default=30, help="Seconds between sends (default: 30)")
+    p_send.add_argument("--no-validate-emails", action="store_true",
+                        help="Skip email validation (NOT recommended — high bounce risk)")
+    p_send.add_argument("--probe-from", default="",
+                        help="MAIL FROM used during validation probes "
+                             "(default: verify@<your sender domain>)")
+    p_send.add_argument("--keep-risky", action="store_true",
+                        help="Send to role accounts (info@, support@…) anyway")
     p_send.set_defaults(func=cmd_send)
 
     # --- pipeline ---
@@ -987,6 +1073,12 @@ Examples:
                             help="v1=legacy, v2=fact-grounded (recommended)")
     p_pipeline.add_argument("--lang", choices=["en", "sk"], default="en",
                             help="Email language (only used in v2 mode)")
+    p_pipeline.add_argument("--no-validate-emails", action="store_true",
+                            help="Skip email validation (NOT recommended)")
+    p_pipeline.add_argument("--probe-from", default="",
+                            help="MAIL FROM used during validation probes")
+    p_pipeline.add_argument("--keep-risky", action="store_true",
+                            help="Send to role accounts (info@, support@…) anyway")
     p_pipeline.set_defaults(func=cmd_pipeline)
 
     # --- campaign ---
@@ -1036,6 +1128,13 @@ Examples:
                             help="v1=legacy PageSpeed prompt, v2=fact-grounded (default)")
     p_campaign.add_argument("--lang", choices=["en", "sk"], default="sk",
                             help="Email language (default: sk for the SK pipeline)")
+    p_campaign.add_argument("--no-validate-emails", action="store_true",
+                            help="Skip email validation (NOT recommended)")
+    p_campaign.add_argument("--probe-from", default="",
+                            help="MAIL FROM used during validation probes "
+                                 "(default: verify@<your sender domain>)")
+    p_campaign.add_argument("--keep-risky", action="store_true",
+                            help="Send to role accounts (info@, support@…) anyway")
     p_campaign.set_defaults(func=cmd_campaign)
 
     args = parser.parse_args()
