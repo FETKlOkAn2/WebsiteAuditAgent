@@ -958,6 +958,33 @@ def cmd_campaign(args):
 
 
 # ---------------------------------------------------------------------------
+# monitor-replies — IMAP poll all sender mailboxes and post replies to Discord
+# ---------------------------------------------------------------------------
+
+def cmd_monitor_replies(args):
+    """Poll all configured Zoho mailboxes for replies, post to Discord webhook."""
+    from replies_monitor import run_once
+
+    webhook = args.webhook_url or os.getenv("DISCORD_WEBHOOK_URL", "")
+    if not webhook and not args.dry_run:
+        print("ERROR: DISCORD_WEBHOOK_URL not set in env, and --dry-run not specified.")
+        print("Either export DISCORD_WEBHOOK_URL=... or pass --dry-run for a console-only test.")
+        sys.exit(1)
+
+    summary = run_once(
+        webhook_url=webhook,
+        lookback_days=args.lookback_days,
+        dry_run=args.dry_run,
+    )
+
+    print(f"\n  examined  : {summary['examined']}")
+    print(f"  posted    : {summary['posted']}")
+    print(f"  ⤿ already seen : {summary['skipped_seen']}")
+    print(f"  ⤿ noise        : {summary['skipped_noise']}")
+    print(f"  ⤿ not a reply  : {summary['skipped_not_a_reply']}\n")
+
+
+# ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
 
@@ -1136,6 +1163,39 @@ Examples:
     p_campaign.add_argument("--keep-risky", action="store_true",
                             help="Send to role accounts (info@, support@…) anyway")
     p_campaign.set_defaults(func=cmd_campaign)
+
+    # --- monitor-replies ---
+    p_monitor = subparsers.add_parser(
+        "monitor-replies",
+        help="Poll all sender Zoho mailboxes for replies and post them to Discord",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # One-shot run (uses DISCORD_WEBHOOK_URL from env)
+  python audit_agent.py monitor-replies
+
+  # Dry run — print to console instead of posting
+  python audit_agent.py monitor-replies --dry-run
+
+  # Look back further (default 3 days)
+  python audit_agent.py monitor-replies --lookback-days 7
+
+Required env:
+  DISCORD_WEBHOOK_URL   — channel webhook
+  IMAP_HOST             — default imap.zoho.eu
+  IMAP_PORT             — default 993
+  SMTP_EMAIL / SMTP_PASSWORD                 — Tomas mailbox
+  SMTP_EMAIL_2 / SMTP_PASSWORD_2             — Erik mailbox (optional)
+  SMTP_EMAIL_3 / SMTP_PASSWORD_3             — Michal mailbox (optional)
+        """,
+    )
+    p_monitor.add_argument("--lookback-days", type=int, default=3,
+                           help="Look back this many days (default: 3)")
+    p_monitor.add_argument("--dry-run", action="store_true",
+                           help="Print to console instead of posting to Discord")
+    p_monitor.add_argument("--webhook-url", default="",
+                           help="Override DISCORD_WEBHOOK_URL")
+    p_monitor.set_defaults(func=cmd_monitor_replies)
 
     args = parser.parse_args()
 

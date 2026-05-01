@@ -1,0 +1,130 @@
+name: Replies Monitor
+
+# Polls all 3 Zoho mailboxes (Tomas, Erik, Michal) every 15 min and posts new
+# replies to a shared Discord channel via webhook.
+#
+# Required GitHub repo secrets:
+#   DISCORD_WEBHOOK_URL          — target channel webhook
+#   SMTP_EMAIL / SMTP_PASSWORD                — Tomas
+#   SMTP_EMAIL_2 / SMTP_PASSWORD_2            — Erik   (optional)
+#   SMTP_EMAIL_3 / SMTP_PASSWORD_3            — Michal (optional)
+#
+# Optional:
+#   IMAP_HOST                    — default imap.zoho.eu
+#   IMAP_PORT                    — default 993
+#
+# State (replies_seen.json + sent_registry.json) lives in the same artifacts
+# the campaign workflow uses, so dedup works across runs and across workflows.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # every 15 minutes
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: 'How many days back to scan'
+        type: string
+        default: '3'
+      dry_run:
+        description: 'Dry run (log only, do not post to Discord)'
+        type: boolean
+        default: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # If the previous run is still going, skip this one — IMAP polling is
+    # idempotent but we don't want overlapping connections to the same
+    # mailbox.
+    concurrency:
+      group: replies-monitor
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Skip if Discord webhook not configured
+        id: gate
+        run: |
+          if [ -z "${{ secrets.DISCORD_WEBHOOK_URL }}" ] && [ "${{ inputs.dry_run }}" != "true" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "DISCORD_WEBHOOK_URL secret not set and not a dry run — skipping"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Ensure output dir
+        if: steps.gate.outputs.skip != 'true'
+        run: mkdir -p output
+
+      # Pull shared state. continue-on-error so the very first run doesn't fail.
+      - name: Download replies_seen artifact
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: replies-seen
+          path: output/
+        continue-on-error: true
+
+      - name: Download sent registry
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: sent-registry
+          path: output/
+        continue-on-error: true
+
+      - name: Build .env (no per-sender SMTP creds in main env, write file)
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          cat > .env <<EOF
+          OUTPUT_DIR=output
+          IMAP_HOST=${{ secrets.IMAP_HOST || 'imap.zoho.eu' }}
+          IMAP_PORT=${{ secrets.IMAP_PORT || '993' }}
+          DISCORD_WEBHOOK_URL=${{ secrets.DISCORD_WEBHOOK_URL }}
+          SMTP_HOST=${{ secrets.SMTP_HOST }}
+          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_EMAIL=${{ secrets.SMTP_EMAIL }}
+          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+          SMTP_EMAIL_2=${{ secrets.SMTP_EMAIL_2 }}
+          SMTP_PASSWORD_2=${{ secrets.SMTP_PASSWORD_2 }}
+          SMTP_EMAIL_3=${{ secrets.SMTP_EMAIL_3 }}
+          SMTP_PASSWORD_3=${{ secrets.SMTP_PASSWORD_3 }}
+          EOF
+
+      - name: Run replies monitor
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          DRY=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            DRY="--dry-run"
+          fi
+          LOOKBACK="${{ inputs.lookback_days }}"
+          if [ -z "$LOOKBACK" ]; then
+            LOOKBACK="3"
+          fi
+          python audit_agent.py monitor-replies --lookback-days "$LOOKBACK" $DRY
+        timeout-minutes: 8
+        # The IMAP polling needs to be self-contained — but if any single
+        # mailbox fails we still want to write back the seen state.
+        continue-on-error: true
+
+      - name: Upload replies_seen artifact
+        if: always() && steps.gate.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: replies-seen
+          path: output/replies_seen.json
+          overwrite: true
+          if-no-files-found: warn
