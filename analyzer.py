@@ -5,12 +5,34 @@ Takes raw audit data, identifies issues, generates emails.
 
 import json
 import logging
+import re
 import anthropic
 
 import config
 from prompts import AUDIT_ANALYSIS_PROMPT, EMAIL_GENERATION_PROMPT
 
 logger = logging.getLogger(__name__)
+
+
+def strip_ai_dashes(text: str) -> str:
+    """
+    Remove em/en dashes and dash-as-punctuation, which are a strong "this was
+    written by AI" tell. Intra-word hyphens (e-mail, Wi-Fi, tel:) are kept.
+
+        "Krásny web — ale pomalý."  -> "Krásny web, ale pomalý."
+        "Rýchle - a lacné"          -> "Rýchle, a lacné"
+    """
+    if not text:
+        return text
+    # em/en dash (with any surrounding whitespace) -> comma
+    text = re.sub(r"\s*[—–]\s*", ", ", text)
+    # a hyphen used as a dash (surrounded by spaces) -> comma
+    text = re.sub(r"\s+-\s+", ", ", text)
+    # tidy artefacts left behind
+    text = re.sub(r",\s*([.;:!?])", r"\1", text)   # ", ." -> "."
+    text = re.sub(r",\s*,", ",", text)              # ", ," -> ","
+    text = re.sub(r"\s+,", ",", text)               # " ,"  -> ","
+    return text
 
 
 def _call_llm(prompt: str) -> str:
@@ -142,6 +164,7 @@ def _clean_email_body(body: str, sender_name: str) -> str:
                 continue
         cleaned.append(line)
     result = "\n".join(cleaned)
+    result = strip_ai_dashes(result)
     # Re-encode for JSON storage
     return result.replace("\n", "\\n")
 

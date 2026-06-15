@@ -41,7 +41,7 @@ import config
 import personalization
 from personalization import SiteFacts
 import prompts_v2
-from analyzer import _call_llm, _parse_json_response, _clean_email_body
+from analyzer import _call_llm, _parse_json_response, _clean_email_body, strip_ai_dashes
 
 logger = logging.getLogger(__name__)
 
@@ -140,9 +140,9 @@ def generate_email_v2(
 
         base["validation"]["retried"] = True
 
-    base["subject_line"] = (result.get("subject_line") or "").strip()
+    base["subject_line"] = strip_ai_dashes((result.get("subject_line") or "").strip())
     base["email_body"] = body
-    base["follow_up_subject"] = (result.get("follow_up_subject") or "").strip()
+    base["follow_up_subject"] = strip_ai_dashes((result.get("follow_up_subject") or "").strip())
     base["follow_up_body"] = _clean_email_body(
         result.get("follow_up_body", ""), sender_name
     )

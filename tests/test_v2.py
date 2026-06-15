@@ -343,5 +343,58 @@ class TestProcessSingleV2(unittest.TestCase):
         mock_llm.assert_not_called()
 
 
+class TestDashStripping(unittest.TestCase):
+    """analyzer.strip_ai_dashes removes the AI-tell dashes from emails."""
+
+    def setUp(self):
+        from analyzer import strip_ai_dashes
+        self.strip = strip_ai_dashes
+
+    def test_em_dash_becomes_comma(self):
+        self.assertEqual(self.strip("Krásny web — ale pomalý."),
+                         "Krásny web, ale pomalý.")
+
+    def test_en_dash_becomes_comma(self):
+        self.assertEqual(self.strip("text – ďalší"), "text, ďalší")
+
+    def test_spaced_hyphen_becomes_comma(self):
+        self.assertEqual(self.strip("Rýchle - lacné"), "Rýchle, lacné")
+
+    def test_intraword_hyphen_kept(self):
+        self.assertEqual(self.strip("e-mail a Wi-Fi"), "e-mail a Wi-Fi")
+
+    def test_dangling_punctuation_tidied(self):
+        self.assertEqual(self.strip("Koniec — ."), "Koniec.")
+
+    def test_empty(self):
+        self.assertEqual(self.strip(""), "")
+
+    def test_prompts_have_no_dashes(self):
+        import prompts_v2
+        for p in (prompts_v2.EMAIL_PROMPT_SK, prompts_v2.EMAIL_PROMPT_EN):
+            self.assertEqual(p.count("—"), 0)
+            self.assertEqual(p.count("–"), 0)
+
+    def test_prompts_ban_the_repeated_cta(self):
+        # The line the user flagged must be explicitly forbidden.
+        import prompts_v2
+        self.assertIn("Je to vedome takto", prompts_v2.EMAIL_PROMPT_SK)
+        self.assertIn("ZAKÁZANÉ FRÁZY", prompts_v2.EMAIL_PROMPT_SK)
+
+
+class TestRedesignFraming(unittest.TestCase):
+    def test_sk_prompt_pushes_whole_site(self):
+        import prompts_v2
+        body = prompts_v2.EMAIL_PROMPT_SK.lower()
+        self.assertIn("celej stránky", body)
+        self.assertIn("prerob", body)  # prerobiť / prerábali
+
+    def test_en_prompt_pushes_whole_site(self):
+        import prompts_v2
+        body = prompts_v2.EMAIL_PROMPT_EN.lower()
+        self.assertIn("whole site", body)
+        self.assertIn("redesign", body)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -80,8 +80,18 @@ class SiteFacts:
 
     def quotable_strings(self) -> list[str]:
         """
-        All the strings the email is allowed to reference verbatim.
-        Used by the validator to confirm grounding.
+        Strings the email is allowed to reference verbatim, used by the
+        validator to confirm grounding.
+
+        ONLY genuinely on-page, language-neutral anchors belong here: the H1,
+        the CTA label, the city, the booking-field count. Our own finding
+        prose (surprising_finding, high_confidence_finding) and the English
+        niche labels are deliberately excluded — forcing a Slovak email to
+        quote an English sentence like "Phone number is shown but not
+        tappable on mobile" verbatim produced broken, mixed-language copy.
+        Those findings still reach the LLM via the prompt's {surprise} /
+        {hi_finding} fields, which it paraphrases naturally in the target
+        language.
         """
         out = []
         if self.h1:
@@ -90,13 +100,6 @@ class SiteFacts:
             out.append(self.primary_cta_text)
         if self.city_or_area:
             out.append(self.city_or_area)
-        out.extend(self.niche_specific_missing)
-        out.extend(self.niche_specific_present)
-        if self.surprising_finding:
-            out.append(self.surprising_finding)
-        if self.high_confidence_finding:
-            out.append(self.high_confidence_finding)
-        # Numerics
         if self.booking_field_count is not None:
             out.append(str(self.booking_field_count))
         return [s for s in out if s and len(s.strip()) >= 2]
