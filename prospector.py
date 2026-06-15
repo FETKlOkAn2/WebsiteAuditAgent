@@ -25,12 +25,13 @@ import os
 import re
 import time
 from datetime import datetime
-from urllib.parse import urlparse, quote_plus
+from urllib.parse import quote_plus
 
 import requests
 from bs4 import BeautifulSoup
 
 import config
+from storage import domain_of
 from scraper import fetch_html, extract_seo_signals, detect_tech_stack
 
 logger = logging.getLogger(__name__)
@@ -260,8 +261,7 @@ def quick_qualify(url: str) -> dict:
         "birdeye.com", "merchantcircle.com",
     ]
 
-    parsed = urlparse(url)
-    domain = parsed.netloc.lower().replace("www.", "")
+    domain = domain_of(url)
     for skip in skip_domains:
         if skip in domain:
             result["skip_reason"] = f"Directory/social site: {skip}"
@@ -449,7 +449,7 @@ def prospect(
             results = search_duckduckgo(query, num_results=10)
 
         for r in results:
-            domain = urlparse(r["url"]).netloc.lower().replace("www.", "")
+            domain = domain_of(r["url"])
             if domain not in seen_domains:
                 seen_domains.add(domain)
                 all_results.append(r)

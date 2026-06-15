@@ -23,9 +23,10 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import config
+from storage import domain_of, JsonStore
 from scraper import analyze_website
 from analyzer import analyze_audit_data, generate_email
 from output import save_json, save_csv, print_summary
@@ -84,7 +85,6 @@ def load_contacts_csv(filepath: str) -> dict:
     Load a contacts CSV that maps website URLs to recipient emails.
     Returns dict: {website_domain: {email, name, ...}}
     """
-    from urllib.parse import urlparse
     contacts = {}
     with open(filepath, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -103,7 +103,7 @@ def load_contacts_csv(filepath: str) -> dict:
             if email and website:
                 if not website.startswith("http"):
                     website = "https://" + website
-                domain = urlparse(website).netloc.lower().replace("www.", "")
+                domain = domain_of(website)
                 contacts[domain] = {
                     "email": email,
                     "name": row.get("name", row.get("contact_name", "")).strip(),
@@ -165,11 +165,33 @@ def process_single(
         fetch = fetch_html(url)
         html = fetch.get("html") or ""
 
+        # Owner-name lookup before the LLM call — first-name greetings are
+        # the single biggest cold-email reply-rate driver in industry research.
+        owner_first_name = None
+        try:
+            from owner_finder import find_owner_name
+            owner_hit = find_owner_name(
+                html=html, base_url=url,
+                contact_emails=audit.get("contact_emails") or [],
+                # Don't slow the pipeline; only follow About pages once we
+                # have a good signal from homepage / emails.
+                follow_about=True,
+            )
+            if owner_hit and owner_hit.get("confidence") in ("high", "medium"):
+                owner_first_name = owner_hit["name"]
+                logger.info(
+                    f"Owner name for {url}: {owner_first_name} "
+                    f"({owner_hit['confidence']}, via {owner_hit['source']})"
+                )
+        except Exception as e:
+            logger.debug(f"Owner-name extraction failed for {url}: {e}")
+
         from analyzer_v2 import generate_email_v2
         v2 = generate_email_v2(
             html=html, url=url, site_name=site_name,
             niche=niche, location=location,
             sender_name=sender_name, lang=lang,
+            owner_first_name=owner_first_name,
         )
 
         # Map v2 output onto the existing schema so the rest of the pipeline
@@ -188,6 +210,8 @@ def process_single(
             "lang": lang,
         }
 
+        audit["owner_first_name"] = owner_first_name
+
         if v2.get("skipped_reason"):
             # Mark this prospect as skipped. _prepare_send_list will drop it.
             audit["email"] = None
@@ -199,6 +223,7 @@ def process_single(
                 "email_body": v2["email_body"],
                 "follow_up_subject": v2["follow_up_subject"],
                 "follow_up_body": v2["follow_up_body"],
+                "owner_first_name": owner_first_name,
             }
             audit["skipped_reason"] = "v2_validation_failed"
         else:
@@ -207,6 +232,7 @@ def process_single(
                 "email_body": v2["email_body"],
                 "follow_up_subject": v2["follow_up_subject"],
                 "follow_up_body": v2["follow_up_body"],
+                "owner_first_name": owner_first_name,
             }
         return audit
 
@@ -277,48 +303,106 @@ def run_batch(
 SENT_REGISTRY_FILE = os.path.join(config.OUTPUT_DIR, "sent_registry.json")
 
 
+def _empty_registry() -> dict:
+    return {"emails": {}, "domains": {}}
+
+
+def _sent_registry_store() -> JsonStore:
+    # Built per-call so tests can reassign the module-level path.
+    # tolerate_corrupt=False: a corrupt registry must fail loud, never
+    # silently reset — that would re-email everyone we've already contacted.
+    return JsonStore(SENT_REGISTRY_FILE, _empty_registry, tolerate_corrupt=False)
+
+
 def _load_sent_registry() -> dict:
     """Load the registry of already-contacted emails and domains."""
-    if os.path.exists(SENT_REGISTRY_FILE):
-        with open(SENT_REGISTRY_FILE, "r") as f:
-            return json.load(f)
-    return {"emails": {}, "domains": {}}
+    return _sent_registry_store().load()
 
 
 def _save_sent_registry(registry: dict):
     """Save the sent registry to disk."""
-    os.makedirs(config.OUTPUT_DIR, exist_ok=True)
-    with open(SENT_REGISTRY_FILE, "w") as f:
-        json.dump(registry, f, indent=2)
+    _sent_registry_store().save(registry)
 
 
-def _record_sent(registry: dict, email: str, website: str, subject: str):
-    """Record that we sent to this email/domain."""
-    from urllib.parse import urlparse
-    domain = urlparse(website).netloc.lower().replace("www.", "")
-    now = datetime.now().isoformat()
+def _record_sent(
+    registry: dict,
+    email: str,
+    website: str,
+    subject: str,
+    *,
+    message_id: str | None = None,
+    follow_up_subject: str = "",
+    follow_up_body: str = "",
+    follow_up_after_days: int = 4,
+):
+    """Record that we sent to this email/domain.
 
-    registry["emails"][email.lower()] = {
+    Stores the Message-ID and the (already-generated) follow-up body so that
+    the `monitor-replies` cron and the `send-followups` command have
+    everything they need without re-running the audit.
+    """
+    domain = domain_of(website)
+    now = datetime.now()
+    now_iso = now.isoformat()
+
+    followup_at = (
+        (now + timedelta(days=follow_up_after_days)).isoformat()
+        if follow_up_subject and follow_up_body else None
+    )
+
+    entry = {
         "website": website,
         "subject": subject,
-        "sent_at": now,
+        "sent_at": now_iso,
+        "message_id": message_id,
+        "follow_up_subject": follow_up_subject,
+        "follow_up_body": follow_up_body,
+        "followup_at": followup_at,
+        "followup_sent_at": None,
+        "reply_received_at": None,
     }
+    registry["emails"][email.lower()] = entry
     registry["domains"][domain] = {
         "email": email,
-        "sent_at": now,
+        "sent_at": now_iso,
     }
+
+
+def _persist_sent_results(send_list: list[dict], send_results: list[dict]) -> int:
+    """
+    Record every successfully-sent email into the sent registry, carrying its
+    Message-ID and follow-up payload for the later `send-followups` step.
+
+    `send_list` and `send_results` are positionally aligned (as returned by
+    sender.send_batch). Returns the number of sends recorded.
+
+    This is the shared tail of cmd_send / cmd_pipeline / cmd_campaign — each
+    used to inline the same load → loop → save dance.
+    """
+    registry = _load_sent_registry()
+    recorded = 0
+    for sent, result in zip(send_list, send_results):
+        if result.get("status") != "sent":
+            continue
+        _record_sent(
+            registry, sent["to"], sent["website"], sent["subject"],
+            message_id=result.get("message_id"),
+            follow_up_subject=sent.get("follow_up_subject", ""),
+            follow_up_body=sent.get("follow_up_body", ""),
+        )
+        recorded += 1
+    _save_sent_registry(registry)
+    return recorded
 
 
 def _already_contacted(registry: dict, email: str, website: str) -> str | None:
     """Check if we've already contacted this email or domain. Returns reason or None."""
-    from urllib.parse import urlparse
-
     email_lower = email.lower()
     if email_lower in registry.get("emails", {}):
         prev = registry["emails"][email_lower]
         return f"already emailed {email} on {prev.get('sent_at', '?')[:10]}"
 
-    domain = urlparse(website).netloc.lower().replace("www.", "")
+    domain = domain_of(website)
     if domain in registry.get("domains", {}):
         prev = registry["domains"][domain]
         return f"already contacted {domain} via {prev.get('email', '?')} on {prev.get('sent_at', '?')[:10]}"
@@ -354,7 +438,6 @@ def _prepare_send_list(
 
     Returns list of {to, subject, body, website, validation: {...}} ready to send.
     """
-    from urllib.parse import urlparse
     contacts = contacts or {}
     registry = _load_sent_registry()
 
@@ -371,7 +454,7 @@ def _prepare_send_list(
         if not subject or not body:
             continue
 
-        domain = urlparse(url).netloc.lower().replace("www.", "")
+        domain = domain_of(url)
         contact = contacts.get(domain, {})
         to_email = contact.get("email", "")
         if not to_email:
@@ -388,12 +471,17 @@ def _prepare_send_list(
             logger.info(f"Skipping {url} — {reason}")
             continue
 
+        # Carry follow-up data through to the send pipeline so _record_sent
+        # can persist it for the scheduled follow-up step.
         candidates.append({
             "to": to_email,
             "subject": subject,
             "body": body,
             "website": url,
             "contact_name": contact.get("name", ""),
+            "follow_up_subject": (email_data.get("follow_up_subject") or "").strip(),
+            "follow_up_body": (email_data.get("follow_up_body") or "").replace("\\n", "\n"),
+            "owner_first_name": email_data.get("owner_first_name") or "",
         })
 
     # Second pass: validate, attach validation metadata, drop bad ones.
@@ -578,11 +666,7 @@ def cmd_send(args):
 
     # Record sent emails so we never contact them again
     if not dry_run:
-        registry = _load_sent_registry()
-        for sl, sr in zip(send_list, results):
-            if sr.get("status") == "sent":
-                _record_sent(registry, sl["to"], sl["website"], sl["subject"])
-        _save_sent_registry(registry)
+        _persist_sent_results(send_list, results)
 
     log_path = save_send_log(results)
     print_send_summary(results)
@@ -679,11 +763,7 @@ def cmd_pipeline(args):
                 )
                 # Record sent emails so we never contact them again
                 if not dry_run:
-                    registry = _load_sent_registry()
-                    for sl, sr in zip(send_list, send_results):
-                        if sr.get("status") == "sent":
-                            _record_sent(registry, sl["to"], sl["website"], sl["subject"])
-                    _save_sent_registry(registry)
+                    _persist_sent_results(send_list, send_results)
                 log_path = save_send_log(send_results)
                 print_send_summary(send_results)
                 print(f"  Send log: {log_path}")
@@ -710,19 +790,24 @@ DEFAULT_EMAIL_DAILY_LIMIT = 40       # Zoho free = 50/day, keep 10 buffer
 DEFAULT_PAGESPEED_DAILY_LIMIT = 400  # 25k/day but no need to hog it
 
 
+def _empty_progress() -> dict:
+    return {"completed": [], "daily_logs": {}}
+
+
+def _campaign_progress_store() -> JsonStore:
+    # tolerate_corrupt=False: corrupt progress must fail loud, not silently
+    # reset (that would re-run every niche/location combo and re-email).
+    return JsonStore(CAMPAIGN_PROGRESS_FILE, _empty_progress, tolerate_corrupt=False)
+
+
 def _load_campaign_progress() -> dict:
     """Load campaign progress from disk."""
-    if os.path.exists(CAMPAIGN_PROGRESS_FILE):
-        with open(CAMPAIGN_PROGRESS_FILE, "r") as f:
-            return json.load(f)
-    return {"completed": [], "daily_logs": {}}
+    return _campaign_progress_store().load()
 
 
 def _save_campaign_progress(progress: dict):
     """Save campaign progress to disk."""
-    os.makedirs(config.OUTPUT_DIR, exist_ok=True)
-    with open(CAMPAIGN_PROGRESS_FILE, "w") as f:
-        json.dump(progress, f, indent=2)
+    _campaign_progress_store().save(progress)
 
 
 def _get_today_usage(progress: dict) -> dict:
@@ -791,6 +876,20 @@ def cmd_campaign(args):
         print(f"\n  All {len(combos)} niche/location combos have been processed!")
         print(f"  Use --reset to start over.\n")
         sys.exit(0)
+
+    # Send-window guard: cold-email reply rate is highly sensitive to send
+    # day. Weekend sends end up buried under Monday's inbox flood and
+    # consistently underperform. Allow override for tests / one-offs.
+    if args.send and args.confirm_send:
+        allowed, reason = _is_good_send_window(
+            allow_weekends=getattr(args, "allow_weekends", False),
+        )
+        if not allowed:
+            print(f"\n  Send window guard: {reason}\n  "
+                  "Audit step still runs — drafts will be ready for Monday.\n")
+            # We could exit early; instead, downgrade to dry-run so the
+            # campaign still generates drafts for later sending.
+            args.confirm_send = False
 
     # Limits
     serper_limit = args.serper_limit
@@ -908,14 +1007,9 @@ def cmd_campaign(args):
                         )
 
                         if not dry_run:
-                            sent_count = sum(1 for r in send_results if r.get("status") == "sent")
-                            today_usage["emails_sent"] += sent_count
                             # Record sent emails so we never contact them again
-                            registry = _load_sent_registry()
-                            for sl, sr in zip(send_list, send_results):
-                                if sr.get("status") == "sent":
-                                    _record_sent(registry, sl["to"], sl["website"], sl["subject"])
-                            _save_sent_registry(registry)
+                            sent_count = _persist_sent_results(send_list, send_results)
+                            today_usage["emails_sent"] += sent_count
                         else:
                             today_usage["emails_sent"] += len(send_list)
 
@@ -955,6 +1049,138 @@ def cmd_campaign(args):
               f"{' --send --confirm-send' if args.send else ''}\n")
     else:
         print(f"\n  All combos processed! Use --reset to start over.\n")
+
+
+# ---------------------------------------------------------------------------
+# Send-window guard — cold email reply rates are highly sensitive to send time
+# ---------------------------------------------------------------------------
+
+def _is_good_send_window(now: datetime | None = None, *, allow_weekends: bool = False) -> tuple[bool, str]:
+    """
+    Industry data on cold-email reply rate by send time:
+      - Tue–Thu 9–11 AM local: best
+      - Mon, Fri: weaker
+      - Sat–Sun: deadtime; mails get buried under Monday's flood
+      - Holiday weeks: avoid
+
+    Returns (allowed, reason). When `allow_weekends=True`, the weekend gate
+    is disabled (useful for testing / one-off manual sends).
+    """
+    now = now or datetime.now()
+    weekday = now.weekday()  # 0 = Monday … 6 = Sunday
+    if not allow_weekends and weekday >= 5:
+        return False, f"weekend send avoided ({now.strftime('%A')}) — pass --allow-weekends to override"
+    return True, "ok"
+
+
+# ---------------------------------------------------------------------------
+# send-followups — drive the second touch in a cold-outreach sequence
+# ---------------------------------------------------------------------------
+
+def cmd_send_followups(args):
+    """
+    Send scheduled follow-ups for prospects who:
+      • were emailed at least `--after-days` ago
+      • haven't replied yet
+      • have a follow-up body recorded in sent_registry.json
+      • haven't already received a follow-up
+
+    Follow-ups are threaded via In-Reply-To + References so they appear
+    under the original email in the recipient's inbox.
+
+    Industry data: follow-ups account for roughly half of all cold-email
+    replies. Sending only the first email throws away most of the funnel.
+    """
+    from datetime import datetime, timedelta
+    from sender import send_batch, save_send_log, print_send_summary, ZOHO_PASSWORD
+
+    allowed, reason = _is_good_send_window(allow_weekends=args.allow_weekends)
+    if not allowed and not args.dry_run:
+        print(f"  Skipping send: {reason}")
+        sys.exit(0)
+
+    registry = _load_sent_registry()
+    emails_map = registry.get("emails", {}) or {}
+    now = datetime.now()
+    cutoff = now - timedelta(days=args.after_days)
+
+    eligible = []
+    for email, entry in emails_map.items():
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("reply_received_at"):
+            continue
+        if entry.get("followup_sent_at"):
+            continue
+        if not entry.get("follow_up_subject") or not entry.get("follow_up_body"):
+            continue
+        try:
+            sent_at = datetime.fromisoformat(entry.get("sent_at", ""))
+        except (TypeError, ValueError):
+            continue
+        if sent_at > cutoff:
+            continue
+        eligible.append((email, entry))
+
+    if not eligible:
+        print("\n  No follow-ups due right now.\n")
+        sys.exit(0)
+
+    # Apply daily cap so we don't burn the whole list in one run
+    eligible = eligible[: args.max_per_run]
+
+    print(f"\n  {len(eligible)} follow-up(s) due (sent at least {args.after_days}d ago, no reply)\n")
+    for email, entry in eligible:
+        days_since = (now - datetime.fromisoformat(entry["sent_at"])).days
+        print(f"    → {email}  ({days_since}d since first contact, original: {entry.get('subject', '')[:60]})")
+
+    if args.dry_run:
+        print("\n  DRY RUN — add --confirm-send to actually send\n")
+        return
+
+    if not args.confirm_send:
+        print("\n  Add --confirm-send to actually send these follow-ups.\n")
+        return
+
+    if not ZOHO_PASSWORD:
+        print("\nERROR: SMTP_PASSWORD not set in .env\n")
+        sys.exit(1)
+
+    # Build send list with threading headers
+    send_list = []
+    for email, entry in eligible:
+        # Prefix subject with "Re:" if the LLM didn't already
+        fu_subject = entry.get("follow_up_subject", "")
+        if not fu_subject.lower().startswith("re:"):
+            fu_subject = f"Re: {entry.get('subject', '')}"
+        send_list.append({
+            "to": email,
+            "subject": fu_subject,
+            "body": entry["follow_up_body"],
+            "website": entry.get("website", ""),
+            "in_reply_to": entry.get("message_id") or "",
+            "references": entry.get("message_id") or "",
+        })
+
+    results = send_batch(
+        emails=send_list,
+        from_name=args.from_name,
+        dry_run=False,
+        delay=args.delay,
+    )
+
+    # Record follow-up sent timestamps
+    now_iso = now.isoformat()
+    for sl, sr in zip(send_list, results):
+        if sr.get("status") == "sent":
+            entry = emails_map.get(sl["to"].lower())
+            if entry:
+                entry["followup_sent_at"] = now_iso
+                entry["followup_message_id"] = sr.get("message_id")
+    _save_sent_registry(registry)
+
+    save_send_log(results, filename=f"followup_send_log_{now.strftime('%Y%m%d_%H%M%S')}.json")
+    print_send_summary(results)
 
 
 # ---------------------------------------------------------------------------
@@ -1162,6 +1388,9 @@ Examples:
                                  "(default: verify@<your sender domain>)")
     p_campaign.add_argument("--keep-risky", action="store_true",
                             help="Send to role accounts (info@, support@…) anyway")
+    p_campaign.add_argument("--allow-weekends", action="store_true",
+                            help="Allow sending on Sat/Sun (default: blocked, "
+                                 "weekend sends have low reply rates)")
     p_campaign.set_defaults(func=cmd_campaign)
 
     # --- monitor-replies ---
@@ -1196,6 +1425,51 @@ Required env:
     p_monitor.add_argument("--webhook-url", default="",
                            help="Override DISCORD_WEBHOOK_URL")
     p_monitor.set_defaults(func=cmd_monitor_replies)
+
+    # --- send-followups ---
+    p_followups = subparsers.add_parser(
+        "send-followups",
+        help="Send the second-touch follow-up to prospects who didn't reply",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Preview what would go out today
+  python audit_agent.py send-followups --dry-run
+
+  # Actually send (default: prospects emailed >=4 days ago, capped at 20)
+  python audit_agent.py send-followups --confirm-send
+
+  # Custom timing + bigger batch
+  python audit_agent.py send-followups --after-days 7 --max-per-run 40 --confirm-send
+
+How it works:
+  Reads sent_registry.json. For each prospect:
+    - sent_at older than --after-days
+    - no reply_received_at (set by monitor-replies when an IMAP reply arrives)
+    - has follow_up_subject + follow_up_body recorded
+    - no followup_sent_at yet
+  Sends a threaded follow-up with In-Reply-To pointing at the original
+  Message-ID so it lands in the same conversation thread on Gmail/Outlook.
+
+  Industry data: ~40-60% of cold-email replies come from follow-ups.
+  Without this step, you're throwing away most of your funnel.
+        """,
+    )
+    p_followups.add_argument("--after-days", type=int, default=4,
+                             help="Send follow-up if first email is at least N days old (default: 4)")
+    p_followups.add_argument("--max-per-run", type=int, default=20,
+                             help="Max follow-ups to send per run (default: 20)")
+    p_followups.add_argument("--delay", type=float, default=30,
+                             help="Seconds between sends (default: 30)")
+    p_followups.add_argument("--from-name", default="Tomas Maxim",
+                             help="Sender display name")
+    p_followups.add_argument("--dry-run", action="store_true",
+                             help="Preview only — don't send")
+    p_followups.add_argument("--confirm-send", action="store_true",
+                             help="Actually send (default is dry-run)")
+    p_followups.add_argument("--allow-weekends", action="store_true",
+                             help="Allow sending on Sat/Sun (default: blocked)")
+    p_followups.set_defaults(func=cmd_send_followups)
 
     args = parser.parse_args()
 

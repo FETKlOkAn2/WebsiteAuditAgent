@@ -155,7 +155,7 @@ ACTION_VERBS = {
     "book", "schedule", "request", "reserve", "get", "call", "contact",
     "start", "begin", "try", "apply", "join", "shop", "buy", "order",
     "claim", "download", "subscribe", "sign up", "consult", "appoint",
-    # Slovak / Czech (cover both with-diacritics and ascii forms)
+
     "rezervovať", "rezervovat", "objednať", "objednat", "kontakt",
     "kontaktovať", "kontaktovat", "zavolať", "zavolat", "napísať",
     "napisat", "požiadať", "poziadat", "prihlásiť", "prihlasit",
@@ -163,7 +163,7 @@ ACTION_VERBS = {
     "kúpiť", "kupit", "vyžiadať", "vyziadat", "dohodnúť", "dohodnut",
     "objednávka", "objednavka", "rezervácia", "rezervacia", "stiahnuť",
     "stiahnut",
-    # German (handful, since some SK sites have DE buttons)
+
     "buchen", "anfragen", "termin",
 }
 
@@ -171,7 +171,7 @@ GENERIC_REVIEW_PATTERNS = [
     re.compile(r"^great (service|experience|place)!?$", re.I),
     re.compile(r"^highly recommend!?$", re.I),
     re.compile(r"^amazing!?$", re.I),
-    re.compile(r"^[a-z]\.\s*$", re.I),  # just an initial
+    re.compile(r"^[a-z]\.\s*$", re.I), 
 ]
 
 

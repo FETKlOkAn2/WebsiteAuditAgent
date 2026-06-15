@@ -15,8 +15,10 @@ import logging
 import os
 import smtplib
 import time
+import uuid
 from datetime import datetime
 from email.mime.text import MIMEText
+from email.utils import formatdate, make_msgid
 
 import config
 
@@ -28,6 +30,9 @@ ZOHO_SMTP_PORT = int(os.getenv("SMTP_PORT") or "465")
 ZOHO_EMAIL = os.getenv("SMTP_EMAIL", "tomasmaxim@emtdstudio.com")
 ZOHO_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SEND_DELAY = float(os.getenv("SEND_DELAY_SECONDS", "30"))
+# Optional: set REPLY_TO_EMAIL to redirect replies to a different inbox
+# (e.g. tomas.maxim33@gmail.com) when the From address is a campaign domain.
+REPLY_TO_EMAIL = os.getenv("REPLY_TO_EMAIL", "")
 
 
 def _connect_smtp():
@@ -37,41 +42,97 @@ def _connect_smtp():
     return server
 
 
+def _build_message(
+    *,
+    to_email: str,
+    subject: str,
+    body: str,
+    from_name: str,
+    reply_to: str = "",
+    in_reply_to: str = "",
+    references: str = "",
+) -> tuple[MIMEText, str]:
+    """
+    Build an MIME message with all the headers a thread-aware client
+    expects. Returns (msg, message_id) — the Message-ID is generated here
+    so callers can persist it for later follow-up threading.
+    """
+    sender_domain = ZOHO_EMAIL.split("@", 1)[-1] or "localhost"
+    message_id = make_msgid(domain=sender_domain)
+
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["From"] = f"{from_name} <{ZOHO_EMAIL}>"
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = message_id
+
+    # Reply-To: if explicitly given, use it; otherwise fall back to global
+    # REPLY_TO_EMAIL env var. If both empty, replies go to the From inbox.
+    chosen_reply_to = reply_to or REPLY_TO_EMAIL
+    if chosen_reply_to:
+        msg["Reply-To"] = chosen_reply_to
+
+    # Threading headers — for follow-ups, populate In-Reply-To and
+    # References so Gmail/Outlook show the email under the original
+    # conversation rather than as a new thread.
+    if in_reply_to:
+        msg["In-Reply-To"] = in_reply_to
+    if references:
+        msg["References"] = references
+    elif in_reply_to:
+        msg["References"] = in_reply_to
+
+    # Minimal hygiene headers that make us look less bot-y to spam filters
+    msg["MIME-Version"] = "1.0"
+    msg["X-Mailer"] = "WebsiteAuditAgent/2.0"
+
+    return msg, message_id
+
+
 def send_single(
     to_email: str,
     subject: str,
     body: str,
     from_name: str = "Tomas Maxim",
     reply_to: str = "",
+    in_reply_to: str = "",
+    references: str = "",
     dry_run: bool = True,
 ) -> dict:
-    """Send a single email. Returns status dict."""
+    """Send a single email. Returns status dict.
+
+    For follow-ups, pass `in_reply_to` (the original Message-ID we stored)
+    so the new mail threads under the same conversation in the recipient's
+    inbox.
+    """
     result = {
         "to": to_email,
         "subject": subject,
         "status": None,
         "error": None,
+        "message_id": None,
         "timestamp": datetime.now().isoformat(),
     }
+
+    msg, message_id = _build_message(
+        to_email=to_email, subject=subject, body=body,
+        from_name=from_name, reply_to=reply_to,
+        in_reply_to=in_reply_to, references=references,
+    )
+    result["message_id"] = message_id
 
     if dry_run:
         result["status"] = "dry_run"
         logger.info(f"[DRY RUN] Would send to {to_email}: {subject}")
         return result
 
-    msg = MIMEText(body, "plain", "utf-8")
-    msg["From"] = f"{from_name} <{ZOHO_EMAIL}>"
-    msg["To"] = to_email
-    msg["Subject"] = subject
-    if reply_to:
-        msg["Reply-To"] = reply_to
-
     try:
         server = _connect_smtp()
         server.sendmail(ZOHO_EMAIL, to_email, msg.as_string())
         server.quit()
         result["status"] = "sent"
-        logger.info(f"Sent to {to_email}: {subject}")
+        logger.info(f"Sent to {to_email}: {subject} (msg-id {message_id})")
     except smtplib.SMTPAuthenticationError as e:
         result["status"] = "auth_error"
         result["error"] = str(e)
@@ -126,11 +187,21 @@ def send_batch(
             logger.warning(f"Skipping incomplete email entry: {email}")
             continue
 
+        msg, message_id = _build_message(
+            to_email=to, subject=subject, body=body,
+            from_name=from_name,
+            reply_to=email.get("reply_to", ""),
+            in_reply_to=email.get("in_reply_to", ""),
+            references=email.get("references", ""),
+        )
+
         result = {
             "to": to,
             "subject": subject,
             "status": None,
             "error": None,
+            "message_id": message_id,
+            "website": email.get("website", ""),
             "timestamp": datetime.now().isoformat(),
         }
 
@@ -139,14 +210,9 @@ def send_batch(
             logger.info(f"[DRY RUN] [{i}/{total}] → {to}: {subject}")
         else:
             try:
-                msg = MIMEText(body, "plain", "utf-8")
-                msg["From"] = f"{from_name} <{ZOHO_EMAIL}>"
-                msg["To"] = to
-                msg["Subject"] = subject
-
                 server.sendmail(ZOHO_EMAIL, to, msg.as_string())
                 result["status"] = "sent"
-                logger.info(f"[{i}/{total}] Sent → {to}: {subject}")
+                logger.info(f"[{i}/{total}] Sent → {to}: {subject} (msg-id {message_id})")
             except smtplib.SMTPException as e:
                 result["status"] = "error"
                 result["error"] = str(e)

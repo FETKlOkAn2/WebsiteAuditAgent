@@ -1,5 +1,5 @@
 """
-Prompts v2 — fact-grounded, language-aware.
+Prompts v2 — fact-grounded, language-aware, conversion-tuned.
 
 Why a v2:
 - v1 prompts produced templated emails because their input was templated
@@ -8,9 +8,24 @@ Why a v2:
   one fact verbatim. If it doesn't, the orchestrator (analyzer_v2) rejects
   the output and retries once.
 
+What changed for conversion (this revision):
+- First-name greeting when owner is known (industry: ~2× reply rate).
+- CTAs rewritten away from "want me to send what I found?" pattern, which
+  is the single most overused cold-email line in 2026. Replaced with
+  curiosity loops, binary asks, or specific time anchors.
+- Expanded banned phrases list — the previous list missed "comprehensive",
+  "tailored", "just wanted to", "just reaching out", "circling back",
+  "touching base", etc. — every dead corporate filler that signals
+  "this is a template".
+- Examples are now SURPRISE-FIRST (Lorem ipsum, copyright year, broken
+  button) rather than performance-first (LCP, mobile load). Performance
+  findings are pattern-matched by every other agency; surprises feel
+  human-spotted.
+- Subject lines vary in case style (lowercase, sentence case) rather than
+  always lowercase — the always-lowercase trick is itself a tell now.
+
 Two languages:
-- "sk" — Slovak, default for the SK pipeline. Tone: tykanie, krátko, bez
-  marketingovej omáčky. Subject line in lowercase Slovak.
+- "sk" — Slovak, default for the SK pipeline.
 - "en" — kept for the legacy US targets, but rewritten with the same
   fact-grounding constraint.
 """
@@ -25,50 +40,92 @@ konkrétne na webe potenciálneho klienta. Cieľ: získať ODPOVEĎ. Nie predaj.
 
 ## TVRDÉ PRAVIDLÁ (každé porušenie = neúspech)
 1. PRESNE 50–80 slov v tele emailu. Spočítaj ich.
-2. Predmet: 3–5 slov, malými písmenami okrem vlastných mien. Bez dvojbodiek.
-3. Prvý riadok: konkrétne pozorovanie z webu. Bez "Dobrý deň", bez "Zdravím".
-4. Posledný riadok: iba meno odosielateľa (`{sender_name}`). Nič iné.
+2. Predmet: 3–6 slov. Nemusí byť celý malými písmenami — môžeš použiť
+   štandardné veľké písmená na začiatku ako pri bežnom emaile. Bez
+   dvojbodiek. Nepoužívaj klišé ako "krátka správa", "rýchla otázka".
+3. Prvý riadok:
+   - Ak vieš meno príjemcu ("{owner_first_name}"), začni "Ahoj {owner_first_name},"
+     alebo "Dobrý deň {owner_first_name},". (Tykať pri salónoch/kaviarňach,
+     vykať pri advokátoch/účtovníkoch/zubároch.) Hneď za oslovením prvá
+     veta = konkrétne pozorovanie z webu.
+   - Ak meno NEVIEŠ ({owner_first_name} = "neznáme"), preskoč oslovenie
+     úplne a začni rovno pozorovaním. Nepíš "Dobrý deň," ani "Zdravím,".
+4. Posledný riadok: iba `{sender_name}`. Nič iné — bez podpisu, bez
+   pozdravu, bez "S pozdravom".
 5. Presne JEDNA otázka v celom emaile, na konci, ako CTA.
 6. Žiadne výkričníky.
-7. Email musí citovať ASPOŇ JEDEN z nasledujúcich faktov DOSLOVA: {quotable_facts}.
-   Ak nezacituješ, výstup zahodím.
-8. Zakázané frázy: "len pár sekúnd vášho času", "rád by som", "dovoľte mi",
-   "prepáčte za vyrušenie", "len chcem", "dúfam že sa Vám darí".
-9. Zakázané slová: optimalizácia, synergia, efektivita, transformácia,
-   posunúť na ďalšiu úroveň, leverage, growth.
+7. Email musí citovať ASPOŇ JEDEN z nasledujúcich faktov DOSLOVA:
+   {quotable_facts}. Ak nezacituješ, výstup zahodím.
+
+## CTA — toto je najdôležitejšie
+Najslabšie CTA je: "Mám vám poslať detail?" / "Chcete to vedieť?" / "Mám
+vám to poslať?" Toto NIKDY nepoužívaj. Recipient nemá dôvod odpovedať
+— path of least resistance je ignorovať.
+
+POUŽI niektorú z týchto silnejších verzií:
+- KONKRÉTNY ČAS:    "Stihnem to opraviť do piatka. Mám sa pustiť?"
+- BINÁRNE: ÁNO/NIE: "Je to vedome takto, alebo to mám opraviť?"
+- ZVEDAVOSTNÁ:      "Je tam dôvod prečo to nechávate ako-je?"
+- LOOP-CLOSE:       "Stojí to vás N zákazníkov mesačne (odhadom). Záujem?"
+- LOW-COMMIT CALL:  "Štvrtok o 11:00 — 10 minút na telefón sa hodí?"
+
+CTA musí byť konkrétne, nech recipient vie čo presne odpoveďou potvrdí.
 
 ## TÓN
-Píšeš ako keď napíšeš kamarátovi že si si všimol niečo na jeho webe. Krátko,
-priamo, bez marketingovej omáčky. Ako keby si práve teraz pozrel ich stránku.
-Tykanie OK ak pôsobí prirodzene; vykanie tiež OK — vyber podľa kontextu.
+Píšeš ako Slovák Slovákovi — krátko, priamo, bez marketingovej omáčky.
+Bez ospravedlňovania ("prepáčte za vyrušenie"). Bez sebachvály ("špecializujem
+sa na…"). Bez budúcich časov ("rád by som"). Píš v prítomnosti
+a aktívnym hlasom.
 
-## STRATÉGIA
-Vyber JEDEN uhol:
+## ZAKÁZANÉ FRÁZY
+"len pár sekúnd vášho času", "rád by som", "dovoľte mi", "prepáčte za
+vyrušenie", "len chcem", "dúfam že sa Vám darí", "ozývam sa Vám",
+"obraciam sa na Vás", "S pozdravom", "Pekný deň", "Krásny deň",
+"chcel som sa opýtať", "neviem či ste si všimli", "v rýchlosti",
+"komplexné riešenie", "individuálny prístup", "moja špecializácia je".
+
+## ZAKÁZANÉ SLOVÁ
+optimalizácia, synergia, efektivita, transformácia, posunúť na ďalšiu
+úroveň, leverage, growth, komplexný, profesionálny prístup,
+moderné riešenie, prispôsobiť na mieru.
+
+## STRATÉGIA — vyber JEDEN uhol
 - POZOROVANIE: Zacituj konkrétny prvok zo stránky (H1, tlačidlo, mesto,
-  niečo nezvyčajné), poveď čo na ňom nesedí, a čo to môže stáť.
+  niečo nezvyčajné), poveď čo na ňom nesedí, a čo to znamená pre biznis.
 - OTÁZKA: Spýtaj sa na konkrétny prvok ("Je to schválne, že...?").
 - POROVNANIE: "Väčšina {niche_sk} v {city} má X. Vy nie."
 
-## PRÍKLADY (študuj dĺžku a tón)
+## PRÍKLADY (študuj dĺžku, tón, CTA)
 
-Príklad A (pozorovanie):
-Predmet: tlačidlo nikam nevedie
-Všimol som si, že tlačidlo "Rezervovať" na vašej úvodnej stránke vedie naspäť hore — neotvára formulár ani rezervačný systém.\\n\\nPre {niche_sk} v {city} to znamená, že každý kto chce rezervovať na mobile, odíde skôr ako sa dostane k formuláru.\\n\\nMôžem vám poslať čo presne treba opraviť?\\n\\n{sender_name}
+Príklad A — SURPRISE FIRST (Lorem ipsum, neznáme meno príjemcu):
+Predmet: Lorem ipsum na úvodnej
+Na vašej úvodnej je v sekcii "O nás" stále zaparkovaný Lorem ipsum text — tri odseky.\\n\\nVidno to hneď ako človek scrolluje pod hero. Pre {niche_sk} v {city} to vyzerá ako "web je v rozrobe", čo nový zákazník číta ako "možno už nefungujú".\\n\\nJe to vedome, alebo to mám dnes opraviť?\\n\\n{sender_name}
 
-Príklad B (otázka):
-Predmet: copyright 2019
-Na vašom webe je v päte uvedené © 2019. To je prvá vec, ktorú človek vidí keď scrolluje dole hľadať kontakt.\\n\\nViem že to znie ako maličkosť, ale pri {niche_sk} si nový zákazník hneď pomyslí "fungujú ešte?".\\n\\nChcete to vedieť opraviť spolu s pár ďalšími vecami?\\n\\n{sender_name}
+Príklad B — POZOROVANIE + LOOP-CLOSE (vieme meno):
+Predmet: Tlačidlo Rezervovať
+Ahoj Peter, všimol som si že tlačidlo "Rezervovať" na vašom webe vedie naspäť hore, neotvára formulár.\\n\\nNa mobile to znamená že každý kto chce rezervovať, odíde skôr ako sa dostane k akémukoľvek formuláru. Pre {niche_sk} v {city} to môže byť pár stratených rezervácií denne.\\n\\nMám sa pozrieť čo to spôsobuje?\\n\\n{sender_name}
 
-Príklad C (porovnanie):
-Predmet: telefón sa nedá kliknúť
-Telefónne číslo na vašom webe je len text — nedá sa naňho kliknúť na mobile.\\n\\nVäčšina {niche_sk} v {city} to má ako "tel:" link, takže človek priamo zavolá. U vás musí číslo opísať.\\n\\nPodľa mojich odhadov to znamená pár stratených hovorov denne. Mám vám poslať detail?\\n\\n{sender_name}
+Príklad C — POROVNANIE + BINÁRNE (vieme meno, vykanie):
+Predmet: Telefón ako text
+Dobrý deň Mária, telefónne číslo na vašom webe je len text — nedá sa na neho na mobile kliknúť a zavolať.\\n\\nVäčšina {niche_sk} v {city} to má ako "tel:" link, takže návštevník stlačí číslo a hneď volá. U vás musí číslo opísať.\\n\\nMám vám to opraviť, alebo to nechávate vedome?\\n\\n{sender_name}
+
+Príklad D — OTÁZKA + KONKRÉTNY ČAS (neznáme meno):
+Predmet: Copyright 2019
+V päte vášho webu je "© 2019". Pri scrollovaní dole hľadať kontakt to človek vidí ako prvé.\\n\\nNeviem či je to zámer alebo nedopatrenie, ale pri {niche_sk} si nový zákazník hneď pomyslí "fungujú ešte?" — a zatvorí to.\\n\\nViem to opraviť dnes večer, ak chcete poslať detail?\\n\\n{sender_name}
+
+## FOLLOW-UP (druhý email, ak prvý nedostal odpoveď do 4 dní)
+Reply na pôvodný thread. Pod 30 slov. Pridaj JEDNU novú konkrétnu vec
+zo stránky. Nepýtaj sa znova to isté — daj iný uhol.
+
+Príklad follow-upu pre prípad A:
+"Ešte k tomu emailu — všimol som si že váš formulár má 7 políčok. Pri väčšine {niche_sk} sú 2-3. Mám sa pozrieť na oboje?\\n\\n{sender_name}"
 
 ## VÝSTUP (iba JSON, žiadny markdown)
 {{
-  "subject_line": "3–5 slov, malé písmená",
-  "email_body": "Telo emailu (50–80 slov). Použi \\\\n pre nový riadok. Skonč iba menom: {sender_name}.",
+  "subject_line": "3-6 slov, prirodzená kapitalizácia",
+  "email_body": "Telo emailu (50-80 slov). Použi \\\\n pre nový riadok. Skonč iba menom: {sender_name}.",
   "follow_up_subject": "Re: pôvodný predmet",
-  "follow_up_body": "Pod 30 slov. Odkáž na prvý email, pridaj jednu novú konkrétnu vec, skonč {sender_name}."
+  "follow_up_body": "Pod 30 slov. Nová konkrétna vec. Skonč {sender_name}."
 }}
 
 ## VSTUP
@@ -76,6 +133,7 @@ URL: {url}
 Biznis: {site_name}
 Niche (SK): {niche_sk}
 Mesto: {city}
+Meno príjemcu (ak vieš): {owner_first_name}
 H1 z webu: "{h1}"
 Hlavné tlačidlo: "{primary_cta}"
 Telefón klikateľný: {phone_clickable}
@@ -90,7 +148,7 @@ DÔLEŽITÉ: Aspoň jeden zo `quotable_facts` musí byť v emaile DOSLOVA. Inak 
 
 
 # ---------------------------------------------------------------------------
-# English prompt (kept for compatibility)
+# English prompt
 # ---------------------------------------------------------------------------
 
 EMAIL_PROMPT_EN = """\
@@ -100,35 +158,92 @@ REPLY. Not a sale.
 
 ## HARD RULES (any violation = failure)
 1. EXACTLY 50–80 words in the body. Count them.
-2. Subject: 3–5 words, lowercase except proper nouns. No colons.
-3. First line: a specific observation from the site. No "Hi", no "Hey".
-4. Last line: just the sender's first name (`{sender_name}`). Nothing else.
+2. Subject: 3–6 words, natural capitalisation (NOT forced all-lowercase —
+   that's a known cold-email tell now). No colons. No clickbait.
+3. First line:
+   - If you know the recipient's first name ("{owner_first_name}"), start
+     with "Hi {owner_first_name}," and immediately the first specific
+     observation on the next line. Drop the name if you don't know it.
+   - If unknown ({owner_first_name} = "unknown"), skip the greeting
+     entirely and lead with the observation. NO "Hi there", NO "Hello,".
+4. Last line: just the sender's first name (`{sender_name}`). Nothing
+   else — no sign-off, no title, no "Best", no "Cheers".
 5. Exactly ONE question in the entire email, at the end, as the CTA.
 6. No exclamation marks.
 7. The email MUST quote at least ONE of these facts verbatim:
    {quotable_facts}
-8. Banned phrases: "no strings attached", "happy to", "I'd love to",
-   "I came across", "I noticed", "hope this finds you", "quick question",
-   "free audit", "mini-audit", "complimentary".
-9. Banned words: leverage, synergy, optimize, growth, elevate, boost,
-   enhance, streamline.
+
+## CTA — most important part
+The weakest CTA is "Want me to send what I found?" or "Worth a look?"
+These get ignored — the recipient has no reason to engage, and saying
+"yes" obligates them to receive even more content.
+
+USE one of these stronger versions instead:
+- TIME-ANCHORED:   "I can fix it by Friday. Want me to?"
+- BINARY YES/NO:   "Is that intentional, or should I fix it?"
+- CURIOSITY LOOP:  "Any reason you're leaving it that way?"
+- LOSS QUANTIFY:   "Costs you maybe N customers a month. Worth fixing?"
+- CALL ASK:        "Free for a 10-min call Thursday at 11?"
+
+CTAs should make replying easy — make a clear ask the recipient can
+respond to in 5 words.
 
 ## TONE
-Like you're texting a friend about something you spotted on their site.
-Short sentences. No sales energy. Casual but respectful.
+Like you're texting someone who runs a small business about something
+you spotted on their site. Direct. No apologising ("sorry to bother
+you"). No selling ("I specialise in…"). No future tense ("I'd love
+to"). Present tense, active voice.
+
+## BANNED PHRASES (any of these = failure)
+"no strings attached", "happy to", "I'd love to", "I came across",
+"I noticed", "hope this finds you", "quick question", "free audit",
+"mini-audit", "complimentary", "just reaching out", "just wanted to",
+"circling back", "touching base", "wanted to share", "thought you'd
+find this interesting", "comprehensive solution", "tailored approach",
+"professional results", "expert team", "synergies".
+
+## BANNED WORDS
+leverage, synergy, optimize, growth, elevate, boost, enhance,
+streamline, comprehensive, robust, scalable, world-class, cutting-edge,
+seamlessly, holistic.
 
 ## ANGLE — pick ONE
-- OBSERVATION: quote a specific element (H1, button text, copyright year,
-  something unusual), say what's off, name the cost.
-- QUESTION: ask about a specific element ("Is it intentional that...?").
-- COMPARISON: "Most {niche} sites in {city} have X. Yours doesn't."
+- OBSERVATION: quote a specific weird element (Lorem ipsum, old
+  copyright year, broken button), say what it costs.
+- QUESTION: ask if a specific element is intentional.
+- COMPARISON: "Most {niche} in {city} have X. Yours doesn't."
+
+## EXAMPLES (study length, tone, CTA — note the surprise-first angle)
+
+Example A — SURPRISE FIRST (unknown name):
+Subject: Lorem ipsum on homepage
+The 'About' section on your homepage still has Lorem ipsum text — three paragraphs of it, right under the hero.\\n\\nIt's the first thing visitors see after scrolling. For a {niche} in {city}, that reads as "site under construction" and "maybe they're not operating anymore".\\n\\nIs that on purpose, or should I fix it today?\\n\\n{sender_name}
+
+Example B — OBSERVATION + LOSS-QUANTIFY (known name):
+Subject: Book Now button broken
+Hi Peter, your "Book Now" button on the homepage scrolls back to the top instead of opening a form.\\n\\nOn mobile, that means anyone tapping it bounces before they even see a booking field. For {niche} in {city}, you're probably losing a handful of bookings a day.\\n\\nShould I take a look at what's causing it?\\n\\n{sender_name}
+
+Example C — COMPARISON + BINARY (known name):
+Subject: Phone shown as text
+Hi Maria, the phone number on your site is text only — visitors can't tap to call from mobile.\\n\\nMost {niche} in {city} have it as a "tel:" link so customers tap and dial directly. Yours forces them to copy the number.\\n\\nIntentional, or should I fix it?\\n\\n{sender_name}
+
+Example D — QUESTION + TIME-ANCHORED (unknown name):
+Subject: Copyright still says 2019
+The footer on your site still says "© 2019". It's the first thing visitors see when they scroll down looking for contact info.\\n\\nNo idea if that's intentional, but for a {niche} that gives the impression you might not be active.\\n\\nI can fix it tonight if you want the details — yes or no?\\n\\n{sender_name}
+
+## FOLLOW-UP (sent 4 days later if no reply, threaded as a reply)
+Under 30 words. Add ONE new specific finding from the site. Different
+angle from the first email. Don't repeat the original ask.
+
+Example follow-up for case A:
+"One more thing — your contact form has 7 fields. Most {niche} use 2-3. Want me to look at both?\\n\\n{sender_name}"
 
 ## OUTPUT (JSON only, no markdown)
 {{
-  "subject_line": "3–5 lowercase words",
-  "email_body": "Full email (50–80 words). Use \\\\n for line breaks. End with just {sender_name}.",
+  "subject_line": "3-6 words, natural capitalisation",
+  "email_body": "Full email (50-80 words). Use \\\\n for line breaks. End with just {sender_name}.",
   "follow_up_subject": "Re: <original subject>",
-  "follow_up_body": "Under 30 words. Reference the first email, add one new concrete thing, end with {sender_name}."
+  "follow_up_body": "Under 30 words. New concrete finding. End with {sender_name}."
 }}
 
 ## INPUT
@@ -136,6 +251,7 @@ URL: {url}
 Business: {site_name}
 Niche: {niche}
 City: {city}
+Recipient first name (if known): {owner_first_name}
 Site H1: "{h1}"
 Main CTA: "{primary_cta}"
 Phone clickable: {phone_clickable}

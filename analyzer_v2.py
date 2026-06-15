@@ -58,6 +58,7 @@ def generate_email_v2(
     location: str = "",
     sender_name: str = "Tomas",
     lang: str = "sk",
+    owner_first_name: Optional[str] = None,
 ) -> dict:
     """
     Top-level v2 entry point. Extracts facts, builds the prompt, calls the
@@ -78,6 +79,7 @@ def generate_email_v2(
     facts = personalization.extract_facts(html, url, niche=niche, location=location)
     base = {
         "facts": facts.to_dict(),
+        "owner_first_name": owner_first_name,
         "skipped_reason": None,
         "subject_line": "",
         "email_body": "",
@@ -95,7 +97,13 @@ def generate_email_v2(
         logger.info(f"Skipping {url}: {base['skipped_reason']}")
         return base
 
-    prompt = _build_prompt(facts, site_name=site_name, sender_name=sender_name, lang=lang)
+    prompt = _build_prompt(
+        facts,
+        site_name=site_name,
+        sender_name=sender_name,
+        lang=lang,
+        owner_first_name=owner_first_name,
+    )
 
     # First attempt
     try:
@@ -158,6 +166,7 @@ def _build_prompt(
     site_name: str,
     sender_name: str,
     lang: str,
+    owner_first_name: Optional[str] = None,
 ) -> str:
     """Render the appropriate v2 prompt with the SiteFacts data filled in."""
     template = prompts_v2.EMAIL_PROMPT_SK if lang == "sk" else prompts_v2.EMAIL_PROMPT_EN
@@ -167,6 +176,12 @@ def _build_prompt(
     quotable_str = " | ".join(f'"{q}"' for q in quotable) if quotable else "(none)"
 
     niche_for_lang = prompts_v2.translate_niche(facts.niche or "", lang)
+
+    # If we don't have a first name, pass a sentinel the prompt knows to
+    # interpret as "skip the greeting" rather than confabulating a salutation.
+    owner_value = owner_first_name if owner_first_name else (
+        "neznáme" if lang == "sk" else "unknown"
+    )
 
     return template.format(
         url=facts.url,
@@ -185,6 +200,7 @@ def _build_prompt(
         hi_finding=facts.high_confidence_finding or "(none)",
         quotable_facts=quotable_str,
         sender_name=sender_name,
+        owner_first_name=owner_value,
     )
 
 

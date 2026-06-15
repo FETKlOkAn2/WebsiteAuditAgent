@@ -57,6 +57,7 @@ from typing import Optional
 import requests
 
 import config
+from storage import domain_of, JsonStore
 
 logger = logging.getLogger(__name__)
 
@@ -143,36 +144,38 @@ class MailboxConfig:
 # Persistence
 # ---------------------------------------------------------------------------
 
+# Both stores tolerate corruption: they're re-derivable from the mailbox,
+# so a bad file should reset rather than block the monitor. (This is the
+# opposite policy from audit_agent's stores — see storage.JsonStore docstring.)
+# Built per-call so tests can reassign the module-level path variables.
+
+def _seen_store() -> JsonStore:
+    return JsonStore(REPLIES_SEEN_FILE, lambda: {"keys": []}, tolerate_corrupt=True)
+
+
+def _registry_store() -> JsonStore:
+    return JsonStore(
+        SENT_REGISTRY_FILE, lambda: {"emails": {}, "domains": {}},
+        tolerate_corrupt=True,
+    )
+
+
 def load_seen() -> dict:
-    if os.path.exists(REPLIES_SEEN_FILE):
-        try:
-            with open(REPLIES_SEEN_FILE, "r") as f:
-                data = json.load(f)
-            if not isinstance(data, dict):
-                return {"keys": []}
-            data.setdefault("keys", [])
-            return data
-        except json.JSONDecodeError:
-            logger.warning(f"{REPLIES_SEEN_FILE} corrupt — starting fresh")
-    return {"keys": []}
+    data = _seen_store().load()
+    if not isinstance(data, dict):
+        return {"keys": []}
+    data.setdefault("keys", [])
+    return data
 
 
 def save_seen(seen: dict):
-    os.makedirs(config.OUTPUT_DIR, exist_ok=True)
     # Cap the list so it doesn't grow forever. Keep most recent 5000.
     seen["keys"] = seen.get("keys", [])[-5000:]
-    with open(REPLIES_SEEN_FILE, "w") as f:
-        json.dump(seen, f, indent=2)
+    _seen_store().save(seen)
 
 
 def load_sent_registry() -> dict:
-    if os.path.exists(SENT_REGISTRY_FILE):
-        try:
-            with open(SENT_REGISTRY_FILE, "r") as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            logger.warning(f"{SENT_REGISTRY_FILE} corrupt — treating as empty")
-    return {"emails": {}, "domains": {}}
+    return _registry_store().load()
 
 
 # ---------------------------------------------------------------------------
@@ -395,7 +398,7 @@ def is_genuine_reply(r: Reply, sent_registry: dict) -> tuple[bool, str]:
 
     # Domain match — same company replying from a different mailbox
     if "@" in fe:
-        domain = fe.split("@", 1)[1].lower().lstrip("www.")
+        domain = domain_of(fe.split("@", 1)[1])
         if domain in domains:
             return True, "domain"
 
@@ -424,7 +427,7 @@ def annotate_with_original(r: Reply, sent_registry: dict):
         return
     # Try domain
     if "@" in fe:
-        domain = fe.split("@", 1)[1].lower().lstrip("www.")
+        domain = domain_of(fe.split("@", 1)[1])
         domains = sent_registry.get("domains", {}) or {}
         info = domains.get(domain)
         if isinstance(info, dict):
@@ -510,6 +513,29 @@ def configured_mailboxes() -> list[MailboxConfig]:
     ]
 
 
+def _mark_reply_in_registry(sent_registry: dict, from_email: str, when: str):
+    """Annotate the sent_registry entry so the follow-up scheduler skips
+    prospects who have already replied. Saves only if we actually changed
+    something."""
+    emails = sent_registry.get("emails", {}) or {}
+    fe = (from_email or "").lower()
+    if fe in emails and isinstance(emails[fe], dict):
+        if not emails[fe].get("reply_received_at"):
+            emails[fe]["reply_received_at"] = when
+            return True
+    # Domain-level fallback — we may have emailed `info@x.com` and the
+    # CEO replied from `ceo@x.com`. Mark the domain's primary contact.
+    if "@" in fe:
+        domain = domain_of(fe.split("@", 1)[1])
+        domains = sent_registry.get("domains", {}) or {}
+        contact = (domains.get(domain) or {}).get("email")
+        if contact and contact in emails and isinstance(emails[contact], dict):
+            if not emails[contact].get("reply_received_at"):
+                emails[contact]["reply_received_at"] = when
+                return True
+    return False
+
+
 def run_once(
     *,
     webhook_url: str = "",
@@ -523,6 +549,7 @@ def run_once(
     sent_registry = load_sent_registry()
     seen = load_seen()
     seen_keys: set[str] = set(seen.get("keys", []))
+    registry_dirty = False
 
     posted = 0
     examined = 0
@@ -574,12 +601,22 @@ def run_once(
                 seen_keys.add(key)
                 posted_keys.append(key)
                 posted += 1
+                # Mark in the sent_registry so the follow-up scheduler skips
+                # this prospect. Persisted in the next save_sent_registry call.
+                now_iso = datetime.now(timezone.utc).isoformat()
+                if _mark_reply_in_registry(sent_registry, r.from_email, now_iso):
+                    registry_dirty = True
             else:
                 logger.warning(f"  failed to post — will retry next run")
 
     if not dry_run:
         seen["keys"] = sorted(seen_keys)
         save_seen(seen)
+        if registry_dirty:
+            # Persist updated reply_received_at flags into sent_registry
+            # so cmd_send_followups can skip already-replied prospects.
+            _registry_store().save(sent_registry)
+            logger.info("Marked reply timestamps in sent_registry.json")
 
     summary = {
         "examined": examined,

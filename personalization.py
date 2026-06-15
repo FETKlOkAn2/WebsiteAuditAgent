@@ -197,7 +197,6 @@ def extract_facts(
 # Helpers
 # ---------------------------------------------------------------------------
 
-# A small list of SK + EU + major US cities we may want to sniff out of copy
 _CITY_LIST_SK = [
     "Bratislava", "Košice", "Kosice", "Žilina", "Zilina", "Prešov", "Presov",
     "Banská Bystrica", "Banska Bystrica", "Trnava", "Nitra", "Trenčín", "Trencin",
