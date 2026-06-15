@@ -1,17 +1,14 @@
 name: Daily Campaign
 
-# PAUSED 2026-04-30 — sender reputation degraded (mailer-daemon bounces).
-# Re-enable by uncommenting the schedule block below once:
-#   1. Bounce rate is verified <3% in Zoho admin
-#   2. SPF/DKIM/DMARC are confirmed on emtdstudio.com
-#   3. SK pipeline is live (lower-volume, native-language, less spam-suspect)
-#
-# Until then, the workflow runs ONLY on manual dispatch.
+# Re-enabled 2026-06-15. Preconditions met: DKIM+DMARC verified on
+# emtdstudio.com, SK pipeline live (OSM discovery + v2 grounded emails +
+# email validation), volume kept low (--email-limit 15) for a gentle ramp.
+# Weekend sends are auto-skipped by the campaign's send-window guard.
 on:
-  # schedule:
-  #   - cron: '0 9 * * *'   # 11:00 Bratislava — Tomas
-  #   - cron: '0 12 * * *'  # 14:00 Bratislava — Erik
-  #   - cron: '0 15 * * *'  # 17:00 Bratislava — Michal
+  schedule:
+    - cron: '0 9 * * 1-5'   # 11:00 Bratislava, Mon–Fri — Tomas
+    - cron: '0 12 * * 1-5'  # 14:00 Bratislava, Mon–Fri — Erik
+    - cron: '0 15 * * 1-5'  # 17:00 Bratislava, Mon–Fri — Michal
   workflow_dispatch:
     inputs:
       sender:
@@ -168,10 +165,15 @@ jobs:
             SEND_FLAG=""
           fi
 
+          # Gentle ramp: cap emails/day/sender low while reputation builds.
+          # Raise --email-limit once replies look healthy. v2 + sk are the
+          # campaign defaults; OSM is the primary discovery source.
+          RAMP="--email-limit 15"
+
           if [ -n "$SENDER_ARG" ]; then
-            python audit_agent.py campaign $SEND_FLAG $RESET_FLAG --sender "$SENDER_ARG" --sender-full "$SENDER_FULL_ARG"
+            python audit_agent.py campaign $SEND_FLAG $RESET_FLAG $RAMP --sender "$SENDER_ARG" --sender-full "$SENDER_FULL_ARG"
           else
-            python audit_agent.py campaign $SEND_FLAG $RESET_FLAG
+            python audit_agent.py campaign $SEND_FLAG $RESET_FLAG $RAMP
           fi
         timeout-minutes: 90
 

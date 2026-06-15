@@ -15,6 +15,31 @@ import config
 logger = logging.getLogger(__name__)
 
 
+def _short_error(e: Exception) -> str:
+    """
+    Turn a raw requests/urllib3 exception into a short, human reason.
+
+    The default str() of a connection error is a multi-line "HTTPSConnectionPool
+    ... Max retries exceeded ... NameResolutionError(...)" wall that makes a
+    routine dead-domain skip look like a crash in the console. Most prospect
+    URLs that fail are simply offline or misspelled — say so in a few words.
+    """
+    text = str(e).lower()
+    if "resolve" in text or "nodename nor servname" in text or "name or service" in text:
+        return "domain does not resolve (site offline?)"
+    if "timed out" in text or "timeout" in text:
+        return "connection timed out"
+    if "ssl" in text or "certificate" in text:
+        return "SSL/certificate problem"
+    if "connection refused" in text or "refused" in text:
+        return "connection refused"
+    if "too many redirects" in text:
+        return "too many redirects"
+    # Last resort: first line only, capped — never the whole pool dump.
+    first_line = str(e).splitlines()[0] if str(e) else e.__class__.__name__
+    return first_line[:80]
+
+
 def fetch_html(url: str) -> dict:
     """Fetch raw HTML and return parsed data."""
     result = {
@@ -40,9 +65,9 @@ def fetch_html(url: str) -> dict:
                     allow_redirects=True, verify=False,
                 )
             except requests.RequestException as e:
-                result["error"] = str(e)
+                result["error"] = _short_error(e)
         except requests.RequestException as e:
-            result["error"] = str(e)
+            result["error"] = _short_error(e)
 
         if resp is not None:
             elapsed = round((time.time() - start) * 1000)

@@ -648,6 +648,57 @@ def _prepare_send_list(
 
 
 # ---------------------------------------------------------------------------
+# preview — manual QA: see emails + proof screenshots before sending anything
+# ---------------------------------------------------------------------------
+
+def cmd_preview(args):
+    """
+    Prospect → v2 audit → screenshot for a handful of leads, then render a
+    single self-contained HTML showing each email next to its proof shot.
+    Sends NOTHING. This is the eyeball-it-first step.
+    """
+    if not config.ANTHROPIC_API_KEY:
+        print("ERROR: ANTHROPIC_API_KEY not set. Add it to .env file.")
+        sys.exit(1)
+
+    print(f"\n  Finding up to {args.count} '{args.niche}' prospects in {args.location}…\n")
+    prospects = run_prospect(
+        niche=args.niche, location=args.location or "",
+        num_results=max(args.count * 2, args.count), min_score=args.min_score,
+    )
+    if not prospects:
+        print("  No prospects found. Try a different niche/location.\n")
+        sys.exit(0)
+
+    urls = [{"url": p["url"], "name": p.get("name", "")} for p in prospects[:args.count]]
+    print(f"  Auditing {len(urls)} and generating emails (v2/{args.lang})…\n")
+    results = run_batch(
+        urls=urls, skip_pagespeed=True,
+        sender_name=args.sender, require_email=False,
+        audit_mode="v2", lang=args.lang,
+        niche=args.niche, location=args.location or "",
+    )
+
+    print("  Capturing proof screenshots…\n")
+    attach_screenshots(results, lang=args.lang, only_with_target=False)
+
+    from preview_report import render_preview
+    html_doc = render_preview(results, niche=args.niche,
+                              location=args.location or "", lang=args.lang)
+    os.makedirs(config.OUTPUT_DIR, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_path = os.path.join(config.OUTPUT_DIR, f"preview_{stamp}.html")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(html_doc)
+
+    print(f"  Preview written: {out_path}")
+    print(f"  Open it:  open {out_path}\n")
+    if args.open:
+        import webbrowser
+        webbrowser.open(f"file://{os.path.abspath(out_path)}")
+
+
+# ---------------------------------------------------------------------------
 # CLI Commands
 # ---------------------------------------------------------------------------
 
@@ -1360,6 +1411,32 @@ Examples:
     p_prospect.add_argument("--count", type=int, default=30, help="Max URLs to check (default: 30)")
     p_prospect.add_argument("--min-score", type=int, default=25, help="Min qualification score (default: 25)")
     p_prospect.set_defaults(func=cmd_prospect)
+
+    # --- preview ---
+    p_preview = subparsers.add_parser(
+        "preview",
+        help="QA: generate emails + proof screenshots into one HTML, send nothing",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Eyeball what the agent would send BEFORE any real run.
+
+Examples:
+  python audit_agent.py preview --niche restauracia --location Bratislava
+  python audit_agent.py preview --niche kaviaren --location Kosice --count 8 --open
+
+Writes output/preview_<timestamp>.html — open it in a browser. Each card
+shows the generated email next to the annotated screenshot of that
+prospect's site. Nothing is sent.
+        """,
+    )
+    p_preview.add_argument("--niche", required=True, help="Business niche (e.g. restauracia)")
+    p_preview.add_argument("--location", default="", help="City (e.g. Bratislava)")
+    p_preview.add_argument("--count", type=int, default=5, help="How many prospects to preview (default: 5)")
+    p_preview.add_argument("--lang", choices=["en", "sk"], default="sk", help="Email language (default: sk)")
+    p_preview.add_argument("--min-score", type=int, default=25, help="Min prospect score (default: 25)")
+    p_preview.add_argument("--sender", default="Tomas", help="Sender first name")
+    p_preview.add_argument("--open", action="store_true", help="Open the HTML in your browser when done")
+    p_preview.set_defaults(func=cmd_preview)
 
     # --- audit ---
     p_audit = subparsers.add_parser(

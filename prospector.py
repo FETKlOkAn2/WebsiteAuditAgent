@@ -40,42 +40,49 @@ logger = logging.getLogger(__name__)
 # Search providers
 # ---------------------------------------------------------------------------
 
+# Once Serper reports no credits we stop calling it for the rest of the run —
+# repeating the same error per query is what made the console look alarming.
+_SERPER_DISABLED = False
+
+
 def search_google_serp(query: str, num_results: int = 20, api_key: str = "", cx: str = "") -> list[dict]:
     """
     Search via Serper.dev API (2500 free queries/month).
-    Set SERPER_API_KEY in .env
+    Set SERPER_API_KEY in .env. Optional — OSM is the primary source now.
     """
-    api_key = api_key or os.getenv("SERPER_API_KEY", "")
-
-    if not api_key:
-        logger.warning("No Serper API key configured (SERPER_API_KEY)")
+    global _SERPER_DISABLED
+    if _SERPER_DISABLED:
         return []
+
+    api_key = api_key or os.getenv("SERPER_API_KEY", "")
+    if not api_key:
+        return []  # silent: Serper is optional, OSM is primary
 
     results = []
     try:
         resp = requests.post(
             "https://google.serper.dev/search",
-            headers={
-                "X-API-KEY": api_key,
-                "Content-Type": "application/json",
-            },
+            headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
             json={"q": query, "num": min(num_results, 10)},
             timeout=15,
         )
         if resp.status_code == 200:
-            data = resp.json()
-            for item in data.get("organic", []):
+            for item in resp.json().get("organic", []):
                 results.append({
                     "url": item.get("link", ""),
                     "title": item.get("title", ""),
                     "snippet": item.get("snippet", ""),
                 })
         elif resp.status_code == 429:
-            logger.warning("Serper API rate limited")
+            logger.info("Serper rate-limited — falling back to other sources")
+        elif resp.status_code == 400 and "credit" in resp.text.lower():
+            # Out of credits: say it once, calmly, and stop trying.
+            _SERPER_DISABLED = True
+            logger.info("Serper has no credits left — skipping it for this run (using OSM/DuckDuckGo)")
         else:
-            logger.error(f"Serper API error: {resp.status_code} — {resp.text[:200]}")
-    except requests.RequestException as e:
-        logger.error(f"Serper search error: {e}")
+            logger.info(f"Serper unavailable ({resp.status_code}) — falling back to other sources")
+    except requests.RequestException:
+        logger.info("Serper unreachable — falling back to other sources")
 
     return results[:num_results]
 
