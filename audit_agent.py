@@ -395,6 +395,110 @@ def _persist_sent_results(send_list: list[dict], send_results: list[dict]) -> in
     return recorded
 
 
+# ---------------------------------------------------------------------------
+# Proof screenshots — annotate the prospect's own page with the problem
+# ---------------------------------------------------------------------------
+
+def _build_highlight_target(facts: dict, lang: str = "sk"):
+    """
+    Decide what single element on the page to circle in red, given the facts
+    the audit extracted. Returns a screenshot.HighlightTarget or None when
+    there's nothing visually circle-able (in which case a plain full-page
+    shot is still useful, but it's weaker proof).
+
+    Priority is "most visually obvious problem first": leftover placeholder
+    text, then a stale copyright year, then the primary CTA.
+    """
+    import re
+    from screenshot import HighlightTarget
+
+    surprise = (facts.get("surprising_finding") or "")
+    surprise_low = surprise.lower()
+    cta = facts.get("primary_cta_text")
+    sk = lang == "sk"
+
+    if "lorem ipsum" in surprise_low:
+        return HighlightTarget(
+            ["lorem ipsum"],
+            "Lorem ipsum text na úvodnej stránke" if sk else "Lorem ipsum text on the homepage",
+        )
+
+    year_match = re.search(r"\b(20\d{2})\b", surprise)
+    if year_match and ("copyright" in surprise_low or "©" in surprise):
+        year = year_match.group(1)
+        return HighlightTarget(
+            [f"© {year}", year],
+            f"Pätička stále uvádza © {year}" if sk else f"Footer still says © {year}",
+        )
+
+    if cta:
+        return HighlightTarget(
+            [cta],
+            f"Tlačidlo „{cta}\"" if sk else f'The "{cta}" button',
+        )
+
+    return None
+
+
+def attach_screenshots(results: list[dict], *, lang: str = "sk",
+                       only_with_target: bool = True) -> int:
+    """
+    Capture an annotated "proof" screenshot for each audited prospect and
+    store it on the result as result["screenshot"].
+
+    Uses ONE headless browser for the whole batch (cheap per-page after
+    launch). Best-effort: if Playwright isn't installed, or a page fails, the
+    prospect simply gets no screenshot and the pipeline continues.
+
+    Returns the number of screenshots successfully captured.
+
+    Deliverability reminder: the captured image is for the *reply / follow-up*,
+    not the first cold email — see screenshot.py module docstring.
+    """
+    try:
+        from screenshot import PageScreenshotter
+    except ImportError:
+        logger.warning("playwright not installed — skipping proof screenshots")
+        return 0
+
+    # Pair each result with its highlight target up front so we can skip the
+    # browser entirely if nothing is circle-able.
+    jobs = []
+    for r in results:
+        if r.get("error") or r.get("skipped_reason"):
+            continue
+        facts = (r.get("analysis") or {}).get("facts") or {}
+        target = _build_highlight_target(facts, lang=lang)
+        if target is None and only_with_target:
+            continue
+        jobs.append((r, target))
+
+    if not jobs:
+        return 0
+
+    captured = 0
+    try:
+        with PageScreenshotter() as shot:
+            for r, target in jobs:
+                res = shot.capture(r["url"], target)
+                if res.ok():
+                    r["screenshot"] = {
+                        "path": res.path,
+                        "annotated": res.annotated,
+                        "target_found": res.target_found,
+                        "caption": target.caption if target else "",
+                    }
+                    captured += 1
+                else:
+                    logger.info(f"  no screenshot for {r['url']}: {res.error}")
+    except ImportError:
+        logger.warning("playwright browser unavailable — skipping proof screenshots")
+        return 0
+
+    logger.info(f"Captured {captured} proof screenshot(s) for {len(jobs)} prospect(s)")
+    return captured
+
+
 def _already_contacted(registry: dict, email: str, website: str) -> str | None:
     """Check if we've already contacted this email or domain. Returns reason or None."""
     email_lower = email.lower()
@@ -596,6 +700,9 @@ def cmd_audit(args):
         location=getattr(args, "location", "") or "",
     )
 
+    if getattr(args, "screenshots", False):
+        attach_screenshots(results, lang=getattr(args, "lang", "en"))
+
     json_path = save_json(results, args.output_json)
     csv_path = save_csv(results, args.output_csv)
 
@@ -717,6 +824,9 @@ def cmd_pipeline(args):
         lang=getattr(args, "lang", "en"),
         niche=args.niche, location=args.location or "",
     )
+
+    if getattr(args, "screenshots", False):
+        attach_screenshots(results, lang=getattr(args, "lang", "en"))
 
     json_path = save_json(results)
     csv_path = save_csv(results)
@@ -979,6 +1089,9 @@ def cmd_campaign(args):
             )
 
             today_usage["pagespeed_calls"] += top_n
+
+            if getattr(args, "screenshots", False):
+                attach_screenshots(results, lang=getattr(args, "lang", "en"))
 
             json_path = save_json(results)
             save_csv(results)
@@ -1264,6 +1377,8 @@ Examples:
                          help="Email language (only used in v2 mode)")
     p_audit.add_argument("--niche", default="", help="Niche hint (used in v2 mode)")
     p_audit.add_argument("--location", default="", help="Location hint (used in v2 mode)")
+    p_audit.add_argument("--screenshots", action="store_true",
+                         help="Capture an annotated proof screenshot per prospect (needs Playwright)")
     p_audit.set_defaults(func=cmd_audit)
 
     # --- send ---
@@ -1332,6 +1447,8 @@ Examples:
                             help="MAIL FROM used during validation probes")
     p_pipeline.add_argument("--keep-risky", action="store_true",
                             help="Send to role accounts (info@, support@…) anyway")
+    p_pipeline.add_argument("--screenshots", action="store_true",
+                            help="Capture an annotated proof screenshot per prospect (needs Playwright)")
     p_pipeline.set_defaults(func=cmd_pipeline)
 
     # --- campaign ---
@@ -1391,6 +1508,9 @@ Examples:
     p_campaign.add_argument("--allow-weekends", action="store_true",
                             help="Allow sending on Sat/Sun (default: blocked, "
                                  "weekend sends have low reply rates)")
+    p_campaign.add_argument("--screenshots", action="store_true",
+                            help="Capture an annotated proof screenshot per prospect "
+                                 "(needs Playwright; recommended for the SK proof play)")
     p_campaign.set_defaults(func=cmd_campaign)
 
     # --- monitor-replies ---

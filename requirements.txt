@@ -5,3 +5,4 @@ anthropic>=0.40.0
 python-dotenv>=1.0.0
 aiohttp>=3.9.0
 dnspython>=2.6.0
+playwright>=1.40.0   # annotated "proof" screenshots (run: playwright install chromium)
