@@ -202,6 +202,157 @@ Example: ["{niche} {location}", "{niche} {location} book appointment", "{niche} 
 
 
 # ---------------------------------------------------------------------------
+# OpenStreetMap (Overpass) — free, keyless discovery of local businesses
+# ---------------------------------------------------------------------------
+#
+# For local SMB niches this beats web search: it returns actual businesses
+# (no directories to filter), pre-filtered to those that HAVE a website, plus
+# phone + address for free. No API key, no per-query cost, generous fair-use.
+
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+
+# niche slug -> list of OSM (key, value) tag filters that identify it
+NICHE_TO_OSM: dict[str, list[tuple[str, str]]] = {
+    "restauracia": [("amenity", "restaurant")],
+    "kaviaren": [("amenity", "cafe")],
+    "fitness centrum": [("leisure", "fitness_centre")],
+    "joga studio": [("leisure", "fitness_centre")],
+    "crossfit": [("leisure", "fitness_centre")],
+    "kadernictvo": [("shop", "hairdresser")],
+    "barber shop": [("shop", "hairdresser")],
+    "nechtove studio": [("shop", "beauty")],
+    "kozmeticky salon": [("shop", "beauty")],
+    "masaze": [("shop", "massage")],
+    "zubar": [("amenity", "dentist"), ("healthcare", "dentist")],
+    "zubna ambulancia": [("amenity", "dentist"), ("healthcare", "dentist")],
+    "ortodoncia": [("amenity", "dentist")],
+    "fyzioterapia": [("healthcare", "physiotherapist")],
+    "optika": [("shop", "optician")],
+    "veterina": [("amenity", "veterinary")],
+    "hotel": [("tourism", "hotel")],
+    "penzion": [("tourism", "guest_house")],
+    "wellness": [("leisure", "spa")],
+    "autoservis": [("shop", "car_repair")],
+    "pneuservis": [("shop", "tyres")],
+    "karoseria": [("shop", "car_repair")],
+    "autoumyvaren": [("amenity", "car_wash")],
+    "instalater": [("craft", "plumber")],
+    "elektrikar": [("craft", "electrician")],
+    "realitna kancelaria": [("office", "estate_agent")],
+    "advokatska kancelaria": [("office", "lawyer")],
+    "notar": [("office", "notary")],
+    "uctovnik": [("office", "accountant")],
+    "fotograf": [("craft", "photographer")],
+    "svadobny fotograf": [("craft", "photographer")],
+    "kvetinarstvo": [("shop", "florist")],
+    "cukraren": [("shop", "pastry"), ("shop", "confectionery")],
+    "pekaren": [("shop", "bakery")],
+    "detska skolka": [("amenity", "kindergarten")],
+    "jazykova skola": [("amenity", "language_school")],
+    "autoskola": [("amenity", "driving_school")],
+    "tetovacie studio": [("shop", "tattoo")],
+    "hudobna skola": [("amenity", "music_school")],
+}
+
+# ascii location -> OSM administrative-area name (with diacritics)
+SK_CITY_OSM: dict[str, str] = {
+    "bratislava": "Bratislava",
+    "kosice": "Košice",
+    "zilina": "Žilina",
+    "presov": "Prešov",
+    "banska bystrica": "Banská Bystrica",
+    "trnava": "Trnava",
+    "nitra": "Nitra",
+    "trencin": "Trenčín",
+    "martin": "Martin",
+    "poprad": "Poprad",
+    "piestany": "Piešťany",
+}
+
+
+def _osm_area_name(location: str) -> str:
+    """Map a (possibly ascii) location to its OSM area name."""
+    city = location.split(",")[0].strip()
+    return SK_CITY_OSM.get(city.lower(), city)
+
+
+def search_overpass(niche: str, location: str, num_results: int = 40,
+                    timeout: int = 40) -> list[dict]:
+    """
+    Find local businesses of `niche` in `location` that have a website, via
+    the OSM Overpass API. Returns the same shape as the web-search providers
+    ({url, title, snippet}) plus phone/address, so the rest of the pipeline
+    is unchanged. Returns [] when the niche isn't mapped or on any failure.
+    """
+    tags = NICHE_TO_OSM.get((niche or "").lower().strip())
+    if not tags or not location:
+        return []
+
+    area = _osm_area_name(location)
+    clauses = []
+    for key, value in tags:
+        clauses.append(f'nwr["{key}"="{value}"]["website"](area.a);')
+        clauses.append(f'nwr["{key}"="{value}"]["contact:website"](area.a);')
+    query = (
+        f"[out:json][timeout:{timeout}];"
+        f'area["name"="{area}"]["boundary"="administrative"]->.a;'
+        f"({''.join(clauses)});"
+        f"out tags center {num_results};"
+    )
+
+    # Overpass rate-limits with 429 (and 504 under load). Retry a couple of
+    # times with backoff before giving up — it's a shared free service.
+    elements = None
+    for attempt in range(1, 4):
+        try:
+            resp = requests.post(
+                OVERPASS_URL, data={"data": query}, timeout=timeout + 10,
+                headers={"User-Agent": "WebsiteAuditAgent/1.0 (prospecting; contact tomas)"},
+            )
+            if resp.status_code == 200:
+                elements = resp.json().get("elements", [])
+                break
+            if resp.status_code in (429, 504) and attempt < 3:
+                wait = 5 * attempt
+                logger.info(f"Overpass {resp.status_code} (busy), retrying in {wait}s…")
+                time.sleep(wait)
+                continue
+            logger.warning(f"Overpass returned {resp.status_code} for {niche} in {area}")
+            return []
+        except (requests.RequestException, ValueError) as e:
+            logger.error(f"Overpass error for {niche} in {area}: {e}")
+            return []
+    if elements is None:
+        return []
+
+    results, seen = [], set()
+    for el in elements:
+        t = el.get("tags", {})
+        url = t.get("website") or t.get("contact:website")
+        if not url:
+            continue
+        if not url.startswith("http"):
+            url = "https://" + url
+        d = domain_of(url)
+        if not d or d in seen:
+            continue
+        seen.add(d)
+        results.append({
+            "url": url,
+            "title": t.get("name", ""),
+            "snippet": "",
+            "phone": t.get("phone") or t.get("contact:phone", ""),
+            "address": " ".join(filter(None, [
+                t.get("addr:street", ""), t.get("addr:housenumber", ""),
+                t.get("addr:city", ""),
+            ])).strip(),
+        })
+
+    logger.info(f"Overpass found {len(results)} '{niche}' sites with a website in {area}")
+    return results[:num_results]
+
+
+# ---------------------------------------------------------------------------
 # Quick qualification (fast checks, no LLM needed)
 # ---------------------------------------------------------------------------
 
@@ -411,53 +562,54 @@ def prospect(
     3. Quick-qualify each result
     4. Return qualified leads sorted by score
     """
-    # Step 1: Get search queries
-    loc = f" {location}" if location else ""
-    # Always start with reliable basic queries
-    base_queries = [
-        f"{niche}{loc}",
-        f"{niche}{loc} book appointment",
-        f"{niche}{loc} near me",
-        f"best {niche}{loc}",
-    ]
-
-    if not queries:
-        logger.info(f"Generating search queries for: {niche} in {location or 'any location'}")
-        try:
-            llm_queries = search_with_llm(niche, location, count=5)
-            logger.info(f"Generated {len(llm_queries)} search queries")
-            # Combine: basic first, then LLM-generated
-            queries = base_queries + [q for q in llm_queries if q not in base_queries]
-        except Exception as e:
-            logger.error(f"Failed to generate queries with LLM: {e}")
-            queries = base_queries
-
-    for q in queries:
-        logger.info(f"  Query: {q}")
-
-    # Step 2: Search
     all_results = []
     seen_domains = set()
 
-    for query in queries:
-        # Try Google API first, fall back to DuckDuckGo
-        results = []
-        if os.getenv("SERPER_API_KEY"):
-            results = search_google_serp(query, num_results=10)
-        if not results:
-            logger.info(f"  Using DuckDuckGo for: {query}")
-            results = search_duckduckgo(query, num_results=10)
-
-        for r in results:
+    def _add(items):
+        for r in items:
             domain = domain_of(r["url"])
-            if domain not in seen_domains:
+            if domain and domain not in seen_domains:
                 seen_domains.add(domain)
                 all_results.append(r)
 
-        # Longer delay between search queries to avoid rate limiting
-        time.sleep(max(config.SCRAPE_DELAY, 4))
+    # Step 1: OpenStreetMap first — free, keyless, returns local businesses
+    # that already have a website. For mapped SK niches this is usually
+    # enough on its own and avoids burning Serper credits / hitting DDG.
+    _add(search_overpass(niche, location, num_results=num_results))
+    if all_results:
+        logger.info(f"Using {len(all_results)} OSM business(es); skipping web search")
 
-    logger.info(f"Found {len(all_results)} unique URLs from search")
+    # Step 2: Web search — only if OSM gave us too few to work with.
+    if len(all_results) < num_results:
+        loc = f" {location}" if location else ""
+        base_queries = [
+            f"{niche}{loc}",
+            f"{niche}{loc} book appointment",
+            f"{niche}{loc} near me",
+            f"best {niche}{loc}",
+        ]
+        if not queries:
+            logger.info(f"Generating search queries for: {niche} in {location or 'any location'}")
+            try:
+                llm_queries = search_with_llm(niche, location, count=5)
+                logger.info(f"Generated {len(llm_queries)} search queries")
+                queries = base_queries + [q for q in llm_queries if q not in base_queries]
+            except Exception as e:
+                logger.error(f"Failed to generate queries with LLM: {e}")
+                queries = base_queries
+
+        for query in queries:
+            results = []
+            if os.getenv("SERPER_API_KEY"):
+                results = search_google_serp(query, num_results=10)
+            if not results:
+                logger.info(f"  Using DuckDuckGo for: {query}")
+                results = search_duckduckgo(query, num_results=10)
+            _add(results)
+            # Longer delay between search queries to avoid rate limiting
+            time.sleep(max(config.SCRAPE_DELAY, 4))
+
+    logger.info(f"Found {len(all_results)} unique URLs total")
 
     # Step 3: Quick-qualify
     qualified = []
