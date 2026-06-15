@@ -417,24 +417,34 @@ def _build_highlight_target(facts: dict, lang: str = "sk"):
     cta = facts.get("primary_cta_text")
     sk = lang == "sk"
 
+    # Most-compelling, highest-on-page first; the weak footer copyright is a
+    # last resort so screenshots stop being a monotony of "© 20xx" footers.
     if "lorem ipsum" in surprise_low:
         return HighlightTarget(
             ["lorem ipsum"],
             "Lorem ipsum text na úvodnej stránke" if sk else "Lorem ipsum text on the homepage",
         )
 
+    if "coming soon" in surprise_low:
+        return HighlightTarget(
+            ["coming soon"],
+            "Sekcia 'Coming soon'" if sk else "'Coming soon' section",
+        )
+
+    # The primary CTA is a strong, above-the-fold visual anchor.
+    if cta:
+        return HighlightTarget(
+            [cta],
+            f"Tlačidlo „{cta}\"" if sk else f'The "{cta}" button',
+        )
+
+    # Footer copyright — weakest, only when there's nothing better to show.
     year_match = re.search(r"\b(20\d{2})\b", surprise)
     if year_match and ("copyright" in surprise_low or "©" in surprise):
         year = year_match.group(1)
         return HighlightTarget(
             [f"© {year}", year],
             f"Pätička stále uvádza © {year}" if sk else f"Footer still says © {year}",
-        )
-
-    if cta:
-        return HighlightTarget(
-            [cta],
-            f"Tlačidlo „{cta}\"" if sk else f'The "{cta}" button',
         )
 
     return None

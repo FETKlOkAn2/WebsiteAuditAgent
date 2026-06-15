@@ -77,47 +77,62 @@ class ScreenshotResult:
 
 
 # ---------------------------------------------------------------------------
-# In-browser annotation script
+# In-browser scripts
 # ---------------------------------------------------------------------------
 
-# Runs in the page. Scrolls the target into view, outlines it, and drops a
-# fixed banner so the captured viewport always shows both.
-_ANNOTATE_JS = """
-([selectorText, caption]) => {
-  // Find the first visible element whose text contains `selectorText`.
-  const needle = (selectorText || '').toLowerCase().trim();
-  let target = null;
-  if (needle) {
-    const walk = document.body ? document.body.querySelectorAll('*') : [];
-    for (const el of walk) {
-      if (el.children.length > 0) continue;             // leaf nodes only
-      const txt = (el.textContent || '').toLowerCase().trim();
-      if (!txt) continue;
-      const rect = el.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) continue; // not visible
-      if (txt.includes(needle)) { target = el; break; }
+# Cookie / consent / GDPR overlays clutter the shot and often cover the very
+# thing we want to show. Remove them before capturing so the screenshot looks
+# like a clean view of the real site. Runs on every capture.
+_DISMISS_OVERLAYS_JS = """
+() => {
+  const KILL = ['cookie','consent','gdpr','cookiebar','cookie-bar','cc-window',
+                'onetrust','didomi','cookiescript','cmplz','borlabs','euconsent',
+                'súbory','suhlas','súhlas'];
+  const candidates = document.querySelectorAll(
+    'div,section,aside,dialog,[role=dialog],[aria-modal=true]');
+  for (const el of candidates) {
+    let hay = ((el.id || '') + ' ' +
+      (el.className && el.className.toString ? el.className.toString() : '')).toLowerCase();
+    let style;
+    try { style = getComputedStyle(el); } catch (e) { continue; }
+    const fixedish = style.position === 'fixed' || style.position === 'sticky';
+    const txt = (el.textContent || '').toLowerCase().slice(0, 400);
+    const looksCookie = KILL.some(k => hay.includes(k)) ||
+      (fixedish && (txt.includes('cookie') || txt.includes('súbory') || txt.includes('consent')));
+    // Only nuke modest overlays, never a full page container.
+    if (looksCookie && el.offsetHeight && el.offsetHeight < window.innerHeight * 0.9) {
+      el.remove();
     }
   }
-  if (target) {
-    target.scrollIntoView({block: 'center', inline: 'center'});
-    target.style.setProperty('outline', '4px solid #e11d48', 'important');
-    target.style.setProperty('outline-offset', '3px', 'important');
-    target.style.setProperty('background-color', 'rgba(225,29,72,0.08)', 'important');
+  // Consent libraries frequently lock scrolling — restore it.
+  document.documentElement.style.overflow = '';
+  if (document.body) document.body.style.overflow = '';
+}
+"""
+
+# Find the first visible leaf element whose text contains `selectorText`,
+# scroll it to the centre, and draw a clean red box with a soft glow around
+# it — deliberately understated so it reads as a human markup, not a banner.
+_HIGHLIGHT_JS = """
+(selectorText) => {
+  const needle = (selectorText || '').toLowerCase().trim();
+  if (!needle || !document.body) return false;
+  let target = null;
+  for (const el of document.body.querySelectorAll('*')) {
+    if (el.children.length > 0) continue;             // leaf nodes only
+    const txt = (el.textContent || '').toLowerCase().trim();
+    if (!txt) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) continue; // not visible
+    if (txt.includes(needle)) { target = el; break; }
   }
-  if (caption) {
-    const banner = document.createElement('div');
-    banner.textContent = caption;
-    banner.setAttribute('data-bb-banner', '1');
-    Object.assign(banner.style, {
-      position: 'fixed', top: '0', left: '0', right: '0',
-      zIndex: '2147483647', background: '#e11d48', color: '#ffffff',
-      font: '600 16px -apple-system, Segoe UI, Roboto, sans-serif',
-      padding: '12px 18px', textAlign: 'center', letterSpacing: '0.2px',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
-    });
-    document.body.appendChild(banner);
-  }
-  return Boolean(target);
+  if (!target) return false;
+  target.scrollIntoView({block: 'center', inline: 'center'});
+  target.style.setProperty('outline', '3px solid #e11d48', 'important');
+  target.style.setProperty('outline-offset', '4px', 'important');
+  target.style.setProperty('border-radius', '4px', 'important');
+  target.style.setProperty('box-shadow', '0 0 0 4px rgba(225,29,72,0.25)', 'important');
+  return true;
 }
 """
 
@@ -209,6 +224,12 @@ class PageScreenshotter:
             except Exception:
                 pass
 
+            # Clear cookie/consent overlays so the shot is clean.
+            try:
+                page.evaluate(_DISMISS_OVERLAYS_JS)
+            except Exception:
+                pass
+
             full_page = True
             if target and not target.is_empty():
                 found = self._annotate(page, target)
@@ -243,23 +264,18 @@ class PageScreenshotter:
     # -- internals ---------------------------------------------------------
 
     def _annotate(self, page, target: HighlightTarget) -> bool:
-        """Try each text candidate; highlight the first that resolves. Returns
-        True if an element was highlighted."""
+        """Try each text candidate; draw a clean red box around the first that
+        resolves. Returns True if an element was highlighted. The caption is
+        NOT stamped on the image — it belongs in the email body, which keeps
+        the screenshot looking like a genuine markup of the real site."""
         for candidate in target.text_candidates:
             if not candidate or not candidate.strip():
                 continue
             try:
-                found = page.evaluate(_ANNOTATE_JS, [candidate.strip(), target.caption])
-                if found:
+                if page.evaluate(_HIGHLIGHT_JS, candidate.strip()):
                     return True
             except Exception:
                 continue
-        # Nothing matched, but still drop the banner for context.
-        if target.caption:
-            try:
-                page.evaluate(_ANNOTATE_JS, ["", target.caption])
-            except Exception:
-                pass
         return False
 
     def _default_name(self, url: str) -> str:

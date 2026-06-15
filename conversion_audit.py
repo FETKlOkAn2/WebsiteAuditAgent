@@ -463,26 +463,26 @@ def detect_surprises(soup: BeautifulSoup) -> list[str]:
     Things worth pointing out in an email — unexpected, low-effort observations.
     Each returned string is owner-readable.
     """
+    # Ordered most-compelling-first: downstream uses surprises[0] as the
+    # email/screenshot anchor, so the weakest signal (stale copyright) goes
+    # last and only surfaces when nothing better was found.
     surprises = []
     text = soup.get_text(" ", strip=True)
     text_lower = text.lower()
 
-    # Lorem ipsum still on the page
+    # Lorem ipsum still on the page — devastating, rare
     if "lorem ipsum" in text_lower:
         surprises.append("Lorem ipsum placeholder text is still on the homepage.")
 
-    # Outdated copyright
-    year_match = re.search(r"©\s*(\d{4})", text)
-    if year_match:
-        year = int(year_match.group(1))
-        # Be conservative: flag if 2+ years old
-        from datetime import datetime
-        if year < datetime.now().year - 1:
-            surprises.append(f"Footer copyright still says {year}.")
-
-    # "Coming soon"
+    # "Coming soon" — reads as "not really operating"
     if "coming soon" in text_lower:
         surprises.append("There's a 'Coming soon' section on the homepage.")
+
+    # Phone shown but not tappable — direct lost-call cost on mobile
+    has_phone = bool(re.search(r"\+?\d[\d\-\s\(\)]{8,}\d", text))
+    has_phone_clickable = bool(soup.find("a", href=re.compile(r"^tel:", re.I)))
+    if has_phone and not has_phone_clickable:
+        surprises.append("Phone number is shown but not tappable on mobile.")
 
     # Empty alt text on hero images
     imgs = soup.find_all("img")
@@ -490,15 +490,14 @@ def detect_surprises(soup: BeautifulSoup) -> list[str]:
     if no_alt_in_first_5 >= 3:
         surprises.append("The first images on the homepage have no alt text or descriptions.")
 
-    # Phone number not clickable (already detected, but worth flagging as a surprise)
-    has_phone = bool(re.search(r"\+?\d[\d\-\s\(\)]{8,}\d", text))
-    has_phone_clickable = bool(soup.find("a", href=re.compile(r"^tel:", re.I)))
-    if has_phone and not has_phone_clickable:
-        surprises.append("Phone number is shown but not tappable on mobile.")
-
-    # Mailto without obfuscation (minor, omit by default — uncomment if useful)
-    # if soup.find("a", href=re.compile(r"^mailto:", re.I)):
-    #     surprises.append("Email address is exposed as a clickable mailto link.")
+    # Outdated copyright — only if GENUINELY stale (3+ years), and LAST,
+    # because a footer year is weak proof and was flooding every prospect.
+    year_match = re.search(r"©\s*(\d{4})", text)
+    if year_match:
+        year = int(year_match.group(1))
+        from datetime import datetime
+        if year <= datetime.now().year - 3:
+            surprises.append(f"Footer copyright still says {year}.")
 
     return surprises[:3]
 

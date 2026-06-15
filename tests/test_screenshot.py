@@ -83,6 +83,27 @@ class TestBuildHighlightTarget(unittest.TestCase):
         self.assertIn("úvodnej", sk.caption)
         self.assertIn("homepage", en.caption)
 
+    def test_cta_beats_copyright(self):
+        # Regression: copyright used to flood every screenshot. Now a CTA
+        # (stronger, higher-on-page) wins over a stale-copyright surprise.
+        facts = {"surprising_finding": "Footer copyright still says 2019.",
+                 "primary_cta_text": "Rezervovať"}
+        t = audit_agent._build_highlight_target(facts, lang="sk")
+        self.assertEqual(t.text_candidates, ["Rezervovať"])
+
+    def test_coming_soon_beats_cta(self):
+        facts = {"surprising_finding": "There's a 'Coming soon' section on the homepage.",
+                 "primary_cta_text": "Book"}
+        t = audit_agent._build_highlight_target(facts, lang="en")
+        self.assertIn("coming soon", [c.lower() for c in t.text_candidates])
+
+    def test_copyright_only_when_nothing_better(self):
+        # No CTA, no other surprise -> copyright is the last-resort anchor.
+        facts = {"surprising_finding": "Footer copyright still says 2019.",
+                 "primary_cta_text": None}
+        t = audit_agent._build_highlight_target(facts, lang="sk")
+        self.assertIn("© 2019", t.text_candidates)
+
     def test_random_year_without_copyright_does_not_match(self):
         # A year mentioned in non-copyright context shouldn't trigger the
         # footer rule; it should fall through to CTA (or None).
