@@ -129,6 +129,7 @@ class ConversionAudit:
     trust: dict = field(default_factory=dict)
     niche_check: dict = field(default_factory=dict)
     local: dict = field(default_factory=dict)
+    design: dict = field(default_factory=dict)  # heuristic design smells (#7)
 
     def high_confidence_findings(self) -> list[Finding]:
         return [f for f in self.findings if f.confidence == "high"]
@@ -143,6 +144,7 @@ class ConversionAudit:
             "trust": self.trust,
             "niche_check": self.niche_check,
             "local": self.local,
+            "design": self.design,
         }
 
 
@@ -634,6 +636,16 @@ def audit_conversion(html: str, url: str, niche: str = "", location: str = "") -
             confidence="high",
             impact="",
         ))
+
+    # Heuristic design smells (#7): free, deterministic dated-design signals
+    # straight from the markup. They become category="design" findings so they
+    # flow into the business-case / email path, and a summary is stashed for
+    # personalization / preview.
+    from waa.analysis.design_smells import build_default_scanner
+    smell_report = build_default_scanner().scan(html)
+    if smell_report.has_smells():
+        audit.findings.extend(smell_report.as_findings())
+    audit.design = smell_report.to_dict()
 
     # Stash detector output too (useful for downstream personalization)
     audit.niche_check["booking"] = booking

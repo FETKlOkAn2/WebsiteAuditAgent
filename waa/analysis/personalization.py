@@ -48,6 +48,8 @@ class SiteFacts:
     surprising_finding: Optional[str] = None
     high_confidence_finding: Optional[str] = None  # one Finding to anchor on
     business_case: Optional[str] = None  # money-framed angle for the email lead
+    design_smells: list[str] = field(default_factory=list)  # heuristic dated-design labels (#7)
+    design_score: Optional[int] = None  # 0-10 heuristic design health (#7)
     booking_field_count: Optional[int] = None
     has_phone_clickable: Optional[bool] = None
     has_clear_h1: Optional[bool] = None
@@ -198,6 +200,11 @@ def extract_facts(
     # market-aware money angle for the email to lead with.
     from waa.analysis.business_case import BusinessCaseBuilder
     facts.business_case = BusinessCaseBuilder().summary_for_prompt(audit, niche) or None
+
+    # Heuristic design smells (#7): free dated-design signals for the preview.
+    design = audit.design or {}
+    facts.design_score = design.get("score")
+    facts.design_smells = [s.get("label", "") for s in design.get("smells", []) if s.get("label")]
 
     return facts
 

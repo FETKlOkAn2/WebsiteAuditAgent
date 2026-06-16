@@ -64,6 +64,12 @@ def _email_html(result: dict) -> str:
         owner_line,
         f'<div class="meta">Validation: {badge}</div>',
     ]
+    smells = facts.get("design_smells") or []
+    if smells:
+        score = facts.get("design_score")
+        score_txt = f" (design {score}/10)" if score is not None else ""
+        chips = "".join(f'<span class="smell">{_esc(s)}</span>' for s in smells)
+        parts.append(f'<div class="meta">Design smells{score_txt}: {chips}</div>')
     if fu_body:
         parts.append('<div class="fu-label">Follow-up (day 4)</div>')
         parts.append(f'<div class="fu-subject">{_esc(fu_subject)}</div>')
@@ -175,6 +181,9 @@ def render_preview(results: list[dict], *, niche: str = "", location: str = "",
   .ok {{ color:var(--ok); font-weight:600; }}
   .warn {{ color:var(--accent); font-weight:600; }}
   .skip {{ color:#94a3b8; font-style:italic; }}
+  .smell {{ display:inline-block; background:#fef2f2; color:#b91c1c;
+            border:1px solid #fecaca; border-radius:6px; padding:1px 7px;
+            margin:2px 4px 2px 0; font-size:12px; }}
   .design {{ margin-top:14px; width:100%; color:#e2e8f0; font-size:12px; }}
   .design-head {{ font-weight:700; color:#fff; margin-bottom:4px; }}
   .design-sum {{ color:#cbd5e1; margin-bottom:8px; }}

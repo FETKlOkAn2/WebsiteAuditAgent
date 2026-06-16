@@ -144,6 +144,13 @@ _CATEGORY_CASES: dict[str, dict] = {
         "reasoning": "leftover placeholder text or an old year makes a new "
                      "customer wonder if the {niche} is even still operating",
     },
+    "design": {
+        "base": 48, "design": True,
+        "headline": "the design looks years out of date",
+        "reasoning": "a dated, non-responsive look makes a {niche} seem less "
+                     "credible than competitors before anyone reads the offer, "
+                     "so visitors who would {channel} bounce instead",
+    },
 }
 
 
