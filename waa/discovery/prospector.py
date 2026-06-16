@@ -44,51 +44,83 @@ logger = logging.getLogger(__name__)
 # Search providers
 # ---------------------------------------------------------------------------
 
-# Once Serper reports no credits we stop calling it for the rest of the run —
-# repeating the same error per query is what made the console look alarming.
-_SERPER_DISABLED = False
+def _serper_out_of_credits(resp) -> bool:
+    """Serper signals exhaustion as 400/402/403 with 'credit' in the body."""
+    if resp.status_code in (402, 403):
+        return True
+    if resp.status_code == 400 and "credit" in (resp.text or "").lower():
+        return True
+    return False
+
+
+def _serper_request(api_key: str, query: str, num_results: int):
+    """One Serper call. Returns (results, exhausted, ok)."""
+    resp = requests.post(
+        "https://google.serper.dev/search",
+        headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
+        json={"q": query, "num": min(num_results, 10)},
+        timeout=15,
+    )
+    if resp.status_code == 200:
+        results = [
+            {"url": item.get("link", ""), "title": item.get("title", ""),
+             "snippet": item.get("snippet", "")}
+            for item in resp.json().get("organic", [])
+        ]
+        return results, False, True
+    if _serper_out_of_credits(resp):
+        return [], True, False
+    if resp.status_code == 429:
+        logger.info("Serper rate-limited — falling back to other sources")
+        return [], False, False
+    logger.info(f"Serper unavailable ({resp.status_code}) — falling back to other sources")
+    return [], False, False
 
 
 def search_google_serp(query: str, num_results: int = 20, api_key: str = "", cx: str = "") -> list[dict]:
     """
-    Search via Serper.dev API (2500 free queries/month).
-    Set SERPER_API_KEY in .env. Optional — OSM is the primary source now.
+    Search via Serper.dev. Rotates across a POOL of keys (SERPER_API_KEY plus
+    SERPER_API_KEY_2..N): when one key runs out of credits we roll to the next
+    one within the same call, so the daily ceiling scales with the number of
+    keys. Optional — OSM is the primary source.
+
+    Passing an explicit `api_key` bypasses the pool (single-key mode, used by
+    tests).
     """
-    global _SERPER_DISABLED
-    if _SERPER_DISABLED:
+    from waa.discovery.serper_keys import get_serper_pool
+
+    # Single-key mode (explicit key): no rotation.
+    if api_key:
+        try:
+            results, _exhausted, _ok = _serper_request(api_key, query, num_results)
+            return results[:num_results]
+        except requests.RequestException:
+            logger.info("Serper unreachable — falling back to other sources")
+            return []
+
+    pool = get_serper_pool()
+    if not pool.has_key():
+        return []  # silent: no keys configured or all spent; OSM is primary
+
+    # Try keys in order; on credit exhaustion mark spent and roll to the next.
+    while True:
+        key = pool.current()
+        if key is None:
+            logger.info("All Serper keys are out of credits — using OSM/DuckDuckGo for the rest of this run")
+            return []
+        try:
+            results, exhausted, ok = _serper_request(key, query, num_results)
+        except requests.RequestException:
+            logger.info("Serper unreachable — falling back to other sources")
+            return []
+        if ok:
+            return results[:num_results]
+        if exhausted:
+            pool.mark_exhausted(key)
+            logger.info(f"Serper key exhausted — rotating ({pool.status()})")
+            continue  # try the next key
+        # transient (429 / other): don't burn other keys this query
         return []
-
-    api_key = api_key or os.getenv("SERPER_API_KEY", "")
-    if not api_key:
-        return []  # silent: Serper is optional, OSM is primary
-
-    results = []
-    try:
-        resp = requests.post(
-            "https://google.serper.dev/search",
-            headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
-            json={"q": query, "num": min(num_results, 10)},
-            timeout=15,
-        )
-        if resp.status_code == 200:
-            for item in resp.json().get("organic", []):
-                results.append({
-                    "url": item.get("link", ""),
-                    "title": item.get("title", ""),
-                    "snippet": item.get("snippet", ""),
-                })
-        elif resp.status_code == 429:
-            logger.info("Serper rate-limited — falling back to other sources")
-        elif resp.status_code == 400 and "credit" in resp.text.lower():
-            # Out of credits: say it once, calmly, and stop trying.
-            _SERPER_DISABLED = True
-            logger.info("Serper has no credits left — skipping it for this run (using OSM/DuckDuckGo)")
-        else:
-            logger.info(f"Serper unavailable ({resp.status_code}) — falling back to other sources")
-    except requests.RequestException:
-        logger.info("Serper unreachable — falling back to other sources")
-
-    return results[:num_results]
 
 
 def search_duckduckgo(query: str, num_results: int = 20) -> list[dict]:
@@ -607,9 +639,10 @@ def prospect(
                 logger.error(f"Failed to generate queries with LLM: {e}")
                 queries = base_queries
 
+        from waa.discovery.serper_keys import get_serper_pool
         for query in queries:
             results = []
-            if os.getenv("SERPER_API_KEY"):
+            if get_serper_pool().has_key():
                 results = search_google_serp(query, num_results=10)
             if not results:
                 logger.info(f"  Using DuckDuckGo for: {query}")

@@ -1176,9 +1176,17 @@ def cmd_pipeline(args):
 CAMPAIGN_PROGRESS_FILE = os.path.join(config.OUTPUT_DIR, "campaign_progress.json")
 
 # Free tier limits
-DEFAULT_SERPER_DAILY_LIMIT = 80      # ~2500/month ÷ 31 days = ~80/day to spread evenly
-DEFAULT_EMAIL_DAILY_LIMIT = 40       # Zoho free = 50/day, keep 10 buffer
-DEFAULT_PAGESPEED_DAILY_LIMIT = 400  # 25k/day but no need to hog it
+DEFAULT_SERPER_PER_KEY = 80           # ~2500/month ÷ 31 days = ~80/day per key
+DEFAULT_SERPER_DAILY_LIMIT = 80       # fallback when key count is unknown
+DEFAULT_EMAIL_DAILY_LIMIT = 40        # Zoho free = 50/day, keep 10 buffer
+DEFAULT_PAGESPEED_DAILY_LIMIT = 400   # 25k/day but no need to hog it
+
+
+def _auto_serper_limit() -> int:
+    """Scale the daily Serper budget with the number of configured keys —
+    rotation (serper_keys) means capacity grows linearly with keys."""
+    from waa.discovery.serper_keys import get_serper_pool
+    return DEFAULT_SERPER_PER_KEY * max(1, get_serper_pool().total())
 
 
 def _empty_progress() -> dict:
@@ -1284,8 +1292,9 @@ def cmd_campaign(args):
             # campaign still generates drafts for later sending.
             args.confirm_send = False
 
-    # Limits
-    serper_limit = args.serper_limit
+    # Limits — when --serper-limit isn't given, scale it with the key count
+    # (each key adds ~80 queries/day of headroom thanks to rotation).
+    serper_limit = args.serper_limit or _auto_serper_limit()
     email_limit = args.email_limit
 
     # Estimate: each pipeline run uses ~8 Serper queries (4 base + ~4 LLM-generated)
@@ -1836,7 +1845,7 @@ Examples:
         """,
     )
     p_campaign.add_argument("--input-csv", default="data/agent_input.csv", help="CSV with niche,location columns (default: data/agent_input.csv)")
-    p_campaign.add_argument("--serper-limit", type=int, default=DEFAULT_SERPER_DAILY_LIMIT, help=f"Max Serper queries per day (default: {DEFAULT_SERPER_DAILY_LIMIT})")
+    p_campaign.add_argument("--serper-limit", type=int, default=0, help=f"Max Serper queries per day (default: auto = {DEFAULT_SERPER_PER_KEY} per configured key)")
     p_campaign.add_argument("--email-limit", type=int, default=DEFAULT_EMAIL_DAILY_LIMIT, help=f"Max emails per day (default: {DEFAULT_EMAIL_DAILY_LIMIT})")
     p_campaign.add_argument("--count", type=int, default=20, help="Max URLs to prospect per combo (default: 20)")
     p_campaign.add_argument("--min-score", type=int, default=25, help="Min prospect score (default: 25)")
