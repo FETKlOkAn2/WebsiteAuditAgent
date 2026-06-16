@@ -53,6 +53,42 @@ def _call_llm(prompt: str, *, model: str | None = None, max_tokens: int = 2000) 
     return message.content[0].text
 
 
+def _call_llm_vision(
+    prompt: str,
+    image_b64: str,
+    media_type: str = "image/png",
+    *,
+    model: str | None = None,
+    max_tokens: int = 1024,
+) -> str:
+    """Call Anthropic with an image + text prompt and return the text response.
+
+    Mirrors `_call_llm` but sends a vision message. Kept separate (not folded
+    into `_call_llm`) so the text path stays simple — the vision capability is
+    only needed by the design critic (improvement #6). `model` defaults to the
+    cheap vision-capable model so per-lead design critiques stay inexpensive.
+    """
+    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+
+    message = client.messages.create(
+        model=model or config.VISION_MODEL,
+        max_tokens=max_tokens,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": image_b64,
+                }},
+                {"type": "text", "text": prompt},
+            ],
+        }],
+    )
+
+    return message.content[0].text
+
+
 def _parse_json_response(text: str) -> dict:
     """Extract JSON from LLM response, handling markdown code blocks."""
     text = text.strip()

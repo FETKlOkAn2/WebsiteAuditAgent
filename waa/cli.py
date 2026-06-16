@@ -521,7 +521,8 @@ def _build_highlight_target(facts: dict, lang: str = "sk"):
 
 def attach_screenshots(results: list[dict], *, lang: str = "sk",
                        only_with_target: bool = True,
-                       require_correct: bool = True) -> int:
+                       require_correct: bool = True,
+                       design_critic: "DesignCritic | None" = None) -> int:
     """
     Capture an annotated "proof" screenshot for each audited prospect and
     store it on the result as result["screenshot"].
@@ -538,6 +539,11 @@ def attach_screenshots(results: list[dict], *, lang: str = "sk",
     annotation is misleading "proof", so it is dropped rather than relying on a
     human to eyeball it. The `preview` QA view passes `require_correct=False`
     so a person can still SEE the near-misses.
+
+    Vision design critique (improvement #6): pass a `design_critic` to also run
+    a vision critique on each captured shot and store it on
+    result["design_critique"]. Off unless a critic is supplied — it costs a
+    vision call per screenshot — so callers opt in (CLI `--design-critique`).
 
     Deliverability reminder: the captured image is for the *reply / follow-up*,
     not the first cold email — see screenshot.py module docstring.
@@ -589,12 +595,37 @@ def attach_screenshots(results: list[dict], *, lang: str = "sk",
                     "caption": target.caption if target else "",
                 }
                 captured += 1
+
+                # Vision design critique on the freshly captured page — the
+                # screenshot already exists, so this adds only the vision call.
+                if design_critic is not None:
+                    niche = (r.get("analysis") or {}).get("facts", {}).get("niche") or ""
+                    critique = design_critic.critique(res.path, niche=niche, lang=lang)
+                    if critique.available:
+                        r["design_critique"] = critique.to_dict()
+                        logger.info(
+                            f"  design critique for {r['url']}: "
+                            f"score {critique.score:.0f}/10, "
+                            f"{len(critique.findings)} finding(s)"
+                        )
     except ImportError:
         logger.warning("playwright browser unavailable — skipping proof screenshots")
         return 0
 
     logger.info(f"Captured {captured} proof screenshot(s) for {len(jobs)} prospect(s)")
     return captured
+
+
+def _build_design_critic(args):
+    """Return a VisionDesignCritic when --design-critique is set, else None.
+
+    Opt-in because it costs one vision call per captured screenshot
+    (improvement #6). Built here so the three commands share one construction.
+    """
+    if not getattr(args, "design_critique", False):
+        return None
+    from waa.analysis.design_critic import VisionDesignCritic
+    return VisionDesignCritic()
 
 
 def _already_contacted(registry: dict, email: str, website: str) -> str | None:
@@ -792,7 +823,8 @@ def cmd_preview(args):
     # QA view: show every shot, including near-misses, so a person can see
     # what the screenshot-correctness gate would drop in a real send.
     attach_screenshots(results, lang=args.lang, only_with_target=False,
-                       require_correct=False)
+                       require_correct=False,
+                       design_critic=_build_design_critic(args))
 
     from waa.proof.preview_report import render_preview
     html_doc = render_preview(results, niche=args.niche,
@@ -876,7 +908,8 @@ def cmd_audit(args):
     )
 
     if getattr(args, "screenshots", False):
-        attach_screenshots(results, lang=getattr(args, "lang", "en"))
+        attach_screenshots(results, lang=getattr(args, "lang", "en"),
+                           design_critic=_build_design_critic(args))
 
     json_path = save_json(results, args.output_json)
     csv_path = save_csv(results, args.output_csv)
@@ -1003,7 +1036,8 @@ def cmd_pipeline(args):
     )
 
     if getattr(args, "screenshots", False):
-        attach_screenshots(results, lang=getattr(args, "lang", "en"))
+        attach_screenshots(results, lang=getattr(args, "lang", "en"),
+                           design_critic=_build_design_critic(args))
 
     json_path = save_json(results)
     csv_path = save_csv(results)
@@ -1270,7 +1304,8 @@ def cmd_campaign(args):
             today_usage["pagespeed_calls"] += top_n
 
             if getattr(args, "screenshots", False):
-                attach_screenshots(results, lang=getattr(args, "lang", "en"))
+                attach_screenshots(results, lang=getattr(args, "lang", "en"),
+                                   design_critic=_build_design_critic(args))
 
             json_path = save_json(results)
             save_csv(results)
@@ -1554,6 +1589,8 @@ prospect's site. Nothing is sent.
     p_preview.add_argument("--lang", choices=["en", "sk"], default="sk", help="Email language (default: sk)")
     p_preview.add_argument("--min-score", type=int, default=25, help="Min prospect score (default: 25)")
     p_preview.add_argument("--sender", default="Tomas", help="Sender first name")
+    p_preview.add_argument("--design-critique", action="store_true",
+                           help="Add a vision design critique under each screenshot (costs a vision call per page)")
     p_preview.add_argument("--open", action="store_true", help="Open the HTML in your browser when done")
     p_preview.set_defaults(func=cmd_preview)
 
@@ -1585,6 +1622,8 @@ Examples:
     p_audit.add_argument("--location", default="", help="Location hint (used in v2 mode)")
     p_audit.add_argument("--screenshots", action="store_true",
                          help="Capture an annotated proof screenshot per prospect (needs Playwright)")
+    p_audit.add_argument("--design-critique", action="store_true",
+                         help="Run a vision design critique on each screenshot (needs --screenshots; costs a vision call per page)")
     p_audit.add_argument("--no-qualify", action="store_true",
                          help="Skip the cheap Haiku qualify gate (v2). Generates an "
                               "email for every prospect — more coverage, more tokens.")
@@ -1660,6 +1699,8 @@ Examples:
                             help="Send to role accounts (info@, support@…) anyway")
     p_pipeline.add_argument("--screenshots", action="store_true",
                             help="Capture an annotated proof screenshot per prospect (needs Playwright)")
+    p_pipeline.add_argument("--design-critique", action="store_true",
+                            help="Run a vision design critique on each screenshot (needs --screenshots; costs a vision call per page)")
     p_pipeline.add_argument("--no-qualify", action="store_true",
                             help="Skip the cheap Haiku qualify gate (v2)")
     p_pipeline.add_argument("--no-critic", action="store_true",
@@ -1726,6 +1767,8 @@ Examples:
     p_campaign.add_argument("--screenshots", action="store_true",
                             help="Capture an annotated proof screenshot per prospect "
                                  "(needs Playwright; recommended for the SK proof play)")
+    p_campaign.add_argument("--design-critique", action="store_true",
+                            help="Run a vision design critique on each screenshot (needs --screenshots; costs a vision call per page)")
     p_campaign.add_argument("--no-qualify", action="store_true",
                             help="Skip the cheap Haiku qualify gate. Default is to "
                                  "qualify (saves the expensive model on weak leads).")

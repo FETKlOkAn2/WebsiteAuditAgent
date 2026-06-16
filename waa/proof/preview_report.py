@@ -71,6 +71,32 @@ def _email_html(result: dict) -> str:
     return "\n".join(parts)
 
 
+def _design_html(result: dict) -> str:
+    """Render the vision design critique (#6), when present."""
+    crit = result.get("design_critique") or {}
+    if not crit.get("available"):
+        return ""
+    score = crit.get("score", -1)
+    dated = " · looks dated" if crit.get("looks_dated") else ""
+    rows = []
+    for f in (crit.get("findings") or [])[:3]:
+        rows.append(
+            f'<li><b>{_esc(f.get("aspect"))}</b> '
+            f'<span class="sev">{_esc(f.get("severity"))}</span><br>'
+            f'{_esc(f.get("observation"))}'
+            f'<br><i>{_esc(f.get("redesign_rationale"))}</i></li>'
+        )
+    summary = _esc(crit.get("summary"))
+    items = "".join(rows)
+    return (
+        f'<div class="design">'
+        f'<div class="design-head">Design score: {_esc(round(float(score)))}/10{dated}</div>'
+        f'<div class="design-sum">{summary}</div>'
+        f'<ul class="design-list">{items}</ul>'
+        f'</div>'
+    )
+
+
 def _card_html(result: dict) -> str:
     url = result.get("url", "")
     facts = (result.get("analysis") or {}).get("facts") or {}
@@ -83,9 +109,12 @@ def _card_html(result: dict) -> str:
         right = (
             f'<div class="cap">{_esc(caption)}</div>'
             f'<img src="{img}" alt="screenshot of {_esc(url)}">'
+            f'{_design_html(result)}'
         )
     else:
-        right = '<div class="noimg">no screenshot<br><small>nothing visual to circle</small></div>'
+        right = ('<div class="noimg">no screenshot<br>'
+                 '<small>nothing visual to circle</small></div>'
+                 f'{_design_html(result)}')
 
     return f"""
     <section class="card">
@@ -146,6 +175,14 @@ def render_preview(results: list[dict], *, niche: str = "", location: str = "",
   .ok {{ color:var(--ok); font-weight:600; }}
   .warn {{ color:var(--accent); font-weight:600; }}
   .skip {{ color:#94a3b8; font-style:italic; }}
+  .design {{ margin-top:14px; width:100%; color:#e2e8f0; font-size:12px; }}
+  .design-head {{ font-weight:700; color:#fff; margin-bottom:4px; }}
+  .design-sum {{ color:#cbd5e1; margin-bottom:8px; }}
+  .design-list {{ list-style:none; padding:0; margin:0; }}
+  .design-list li {{ border-top:1px solid #1e293b; padding:6px 0; line-height:1.4; }}
+  .design-list i {{ color:#94a3b8; }}
+  .sev {{ font-size:10px; text-transform:uppercase; letter-spacing:.05em;
+          color:#fca5a5; }}
 </style></head><body>
   <h1>Preview — {_esc(niche)} · {_esc(location)}</h1>
   <div class="sub">{len(results)} prospects · {sendable} with a sendable email · generated {stamp} · NOTHING was sent</div>
