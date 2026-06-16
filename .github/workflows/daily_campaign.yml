@@ -171,9 +171,9 @@ jobs:
           RAMP="--email-limit 15"
 
           if [ -n "$SENDER_ARG" ]; then
-            python audit_agent.py campaign $SEND_FLAG $RESET_FLAG $RAMP --sender "$SENDER_ARG" --sender-full "$SENDER_FULL_ARG"
+            python -m waa campaign $SEND_FLAG $RESET_FLAG $RAMP --sender "$SENDER_ARG" --sender-full "$SENDER_FULL_ARG"
           else
-            python audit_agent.py campaign $SEND_FLAG $RESET_FLAG $RAMP
+            python -m waa campaign $SEND_FLAG $RESET_FLAG $RAMP
           fi
         timeout-minutes: 90
 

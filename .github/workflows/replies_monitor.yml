@@ -114,7 +114,7 @@ jobs:
           if [ -z "$LOOKBACK" ]; then
             LOOKBACK="3"
           fi
-          python audit_agent.py monitor-replies --lookback-days "$LOOKBACK" $DRY
+          python -m waa monitor-replies --lookback-days "$LOOKBACK" $DRY
         timeout-minutes: 8
         # The IMAP polling needs to be self-contained — but if any single
         # mailbox fails we still want to write back the seen state.

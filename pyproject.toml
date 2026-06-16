@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "website-audit-agent"
+version = "2.0.0"
+description = "Automated cold-outreach pipeline: find leads, audit sites, generate and send personalized emails"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=4.9.0",
+    "anthropic>=0.40.0",
+    "python-dotenv>=1.0.0",
+    "aiohttp>=3.9.0",
+    "dnspython>=2.6.0",
+    "playwright>=1.40.0",
+]
+
+[project.scripts]
+# After `pip install -e .` you can run `waa <command>` directly.
+waa = "waa.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["waa*"]

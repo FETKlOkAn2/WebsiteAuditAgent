@@ -17,7 +17,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-import prospector  # noqa: E402
+import waa.discovery.prospector as prospector  # noqa: E402
 
 
 def _resp(status=200, elements=None):
@@ -42,7 +42,7 @@ SAMPLE = [
 class TestSearchOverpass(unittest.TestCase):
 
     def test_unmapped_niche_returns_empty_without_calling(self):
-        with patch("prospector.requests.post") as post:
+        with patch("waa.discovery.prospector.requests.post") as post:
             out = prospector.search_overpass("spaceship repair", "Bratislava")
         self.assertEqual(out, [])
         post.assert_not_called()
@@ -51,7 +51,7 @@ class TestSearchOverpass(unittest.TestCase):
         self.assertEqual(prospector.search_overpass("restauracia", ""), [])
 
     def test_parses_websites_and_dedups(self):
-        with patch("prospector.requests.post", return_value=_resp(200, SAMPLE)):
+        with patch("waa.discovery.prospector.requests.post", return_value=_resp(200, SAMPLE)):
             out = prospector.search_overpass("restauracia", "Bratislava")
         urls = [r["url"] for r in out]
         self.assertIn("https://www.mlyn.sk", urls)
@@ -59,7 +59,7 @@ class TestSearchOverpass(unittest.TestCase):
         self.assertEqual(len(out), 2)                    # No-Web dropped, Dup deduped
 
     def test_carries_phone_and_address(self):
-        with patch("prospector.requests.post", return_value=_resp(200, SAMPLE)):
+        with patch("waa.discovery.prospector.requests.post", return_value=_resp(200, SAMPLE)):
             out = prospector.search_overpass("restauracia", "Bratislava")
         mlyn = next(r for r in out if r["title"] == "Mlyn")
         self.assertEqual(mlyn["phone"], "+421 903 000 000")
@@ -72,28 +72,28 @@ class TestSearchOverpass(unittest.TestCase):
             captured["query"] = data["data"]
             return _resp(200, [])
 
-        with patch("prospector.requests.post", side_effect=fake_post):
+        with patch("waa.discovery.prospector.requests.post", side_effect=fake_post):
             prospector.search_overpass("zubar", "Kosice")
         self.assertIn('"name"="Košice"', captured["query"])
 
     def test_429_retries_then_gives_up(self):
-        with patch("prospector.requests.post", return_value=_resp(429)) as post, \
-             patch("prospector.time.sleep"):  # don't actually wait
+        with patch("waa.discovery.prospector.requests.post", return_value=_resp(429)) as post, \
+             patch("waa.discovery.prospector.time.sleep"):  # don't actually wait
             out = prospector.search_overpass("restauracia", "Bratislava")
         self.assertEqual(out, [])
         self.assertEqual(post.call_count, 3)  # initial + 2 retries
 
     def test_429_then_success(self):
-        with patch("prospector.requests.post",
+        with patch("waa.discovery.prospector.requests.post",
                    side_effect=[_resp(429), _resp(200, SAMPLE)]) as post, \
-             patch("prospector.time.sleep"):
+             patch("waa.discovery.prospector.time.sleep"):
             out = prospector.search_overpass("restauracia", "Bratislava")
         self.assertEqual(len(out), 2)
         self.assertEqual(post.call_count, 2)
 
     def test_network_error_returns_empty(self):
         import requests as _r
-        with patch("prospector.requests.post", side_effect=_r.RequestException("boom")):
+        with patch("waa.discovery.prospector.requests.post", side_effect=_r.RequestException("boom")):
             self.assertEqual(prospector.search_overpass("restauracia", "Bratislava"), [])
 
 
@@ -102,13 +102,13 @@ class TestProspectPrefersOverpass(unittest.TestCase):
     def test_overpass_results_skip_web_search(self):
         osm_hits = [{"url": "https://a.sk", "title": "A", "snippet": ""},
                     {"url": "https://b.sk", "title": "B", "snippet": ""}]
-        with patch("prospector.search_overpass", return_value=osm_hits) as ov, \
-             patch("prospector.search_google_serp") as serp, \
-             patch("prospector.search_duckduckgo") as ddg, \
-             patch("prospector.quick_qualify",
+        with patch("waa.discovery.prospector.search_overpass", return_value=osm_hits) as ov, \
+             patch("waa.discovery.prospector.search_google_serp") as serp, \
+             patch("waa.discovery.prospector.search_duckduckgo") as ddg, \
+             patch("waa.discovery.prospector.quick_qualify",
                    side_effect=lambda url: {"url": url, "qualified": True, "score": 50,
                                             "red_flags": [], "green_flags": [], "name": ""}), \
-             patch("prospector.time.sleep"):
+             patch("waa.discovery.prospector.time.sleep"):
             out = prospector.prospect("restauracia", "Bratislava",
                                       num_results=2, min_score=10)
         ov.assert_called_once()

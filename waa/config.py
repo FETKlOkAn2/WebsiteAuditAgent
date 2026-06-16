@@ -2,8 +2,10 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Always load .env from the project root, overriding empty shell vars
-load_dotenv(Path(__file__).parent / ".env", override=True)
+# .env lives at the repo root. This module is waa/config.py, so the root is
+# two levels up (waa/ -> repo root).
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 PAGESPEED_API_KEY = os.getenv("PAGESPEED_API_KEY", "")

@@ -14,4 +14,4 @@ COPY agent_input.csv .
 RUN mkdir -p output
 
 # Default: run campaign in dry-run mode
-CMD ["python", "audit_agent.py", "campaign"]
+CMD ["python", "-m", "waa", "campaign"]

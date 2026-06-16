@@ -25,17 +25,17 @@ import sys
 import time
 from datetime import datetime, timedelta
 
-import config
-from storage import domain_of, JsonStore
-from scraper import analyze_website
-from analyzer import analyze_audit_data, generate_email
-from output import save_json, save_csv, print_summary
-from prospector import (
+from waa import config
+from waa.core.storage import domain_of, JsonStore
+from waa.discovery.scraper import analyze_website
+from waa.analysis.analyzer import analyze_audit_data, generate_email
+from waa.core.output import save_json, save_csv, print_summary
+from waa.discovery.prospector import (
     prospect as run_prospect,
     save_prospects_csv,
     print_prospect_summary,
 )
-from sender import (
+from waa.outreach.sender import (
     send_batch,
     load_emails_from_audit_json,
     save_send_log,
@@ -161,7 +161,7 @@ def process_single(
         # Fact-grounded path. Needs the raw HTML — re-fetch only if scraper
         # didn't keep it. analyze_website doesn't currently store html on the
         # result, so we fetch once via the scraper.
-        from scraper import fetch_html
+        from waa.discovery.scraper import fetch_html
         fetch = fetch_html(url)
         html = fetch.get("html") or ""
 
@@ -169,7 +169,7 @@ def process_single(
         # the single biggest cold-email reply-rate driver in industry research.
         owner_first_name = None
         try:
-            from owner_finder import find_owner_name
+            from waa.analysis.owner_finder import find_owner_name
             owner_hit = find_owner_name(
                 html=html, base_url=url,
                 contact_emails=audit.get("contact_emails") or [],
@@ -186,7 +186,7 @@ def process_single(
         except Exception as e:
             logger.debug(f"Owner-name extraction failed for {url}: {e}")
 
-        from analyzer_v2 import generate_email_v2
+        from waa.analysis.analyzer_v2 import generate_email_v2
         v2 = generate_email_v2(
             html=html, url=url, site_name=site_name,
             niche=niche, location=location,
@@ -410,7 +410,7 @@ def _build_highlight_target(facts: dict, lang: str = "sk"):
     text, then a stale copyright year, then the primary CTA.
     """
     import re
-    from screenshot import HighlightTarget
+    from waa.proof.screenshot import HighlightTarget
 
     surprise = (facts.get("surprising_finding") or "")
     surprise_low = surprise.lower()
@@ -466,7 +466,7 @@ def attach_screenshots(results: list[dict], *, lang: str = "sk",
     not the first cold email — see screenshot.py module docstring.
     """
     try:
-        from screenshot import PageScreenshotter
+        from waa.proof.screenshot import PageScreenshotter
     except ImportError:
         logger.warning("playwright not installed — skipping proof screenshots")
         return 0
@@ -605,12 +605,12 @@ def _prepare_send_list(
     if not probe_from:
         # Default: derive a verifier address from the configured SMTP_EMAIL
         # so probes ride on a domain we own (and not on a third-party domain).
-        from sender import ZOHO_EMAIL
+        from waa.outreach.sender import ZOHO_EMAIL
         sender_domain = (ZOHO_EMAIL or "verify@validator.local").split("@", 1)[-1]
         probe_from = f"verify@{sender_domain}"
 
     try:
-        from email_validator import validate_emails as _do_validate
+        from waa.outreach.email_validator import validate_emails as _do_validate
     except ImportError as e:
         logger.error(f"email_validator unavailable ({e}) — sending without validation")
         return candidates
@@ -682,7 +682,7 @@ def cmd_preview(args):
     print("  Capturing proof screenshots…\n")
     attach_screenshots(results, lang=args.lang, only_with_target=False)
 
-    from preview_report import render_preview
+    from waa.proof.preview_report import render_preview
     html_doc = render_preview(results, niche=args.niche,
                               location=args.location or "", lang=args.lang)
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
@@ -1266,7 +1266,7 @@ def cmd_send_followups(args):
     replies. Sending only the first email throws away most of the funnel.
     """
     from datetime import datetime, timedelta
-    from sender import send_batch, save_send_log, print_send_summary, ZOHO_PASSWORD
+    from waa.outreach.sender import send_batch, save_send_log, print_send_summary, ZOHO_PASSWORD
 
     allowed, reason = _is_good_send_window(allow_weekends=args.allow_weekends)
     if not allowed and not args.dry_run:
@@ -1363,7 +1363,7 @@ def cmd_send_followups(args):
 
 def cmd_monitor_replies(args):
     """Poll all configured Zoho mailboxes for replies, post to Discord webhook."""
-    from replies_monitor import run_once
+    from waa.outreach.replies_monitor import run_once
 
     webhook = args.webhook_url or os.getenv("DISCORD_WEBHOOK_URL", "")
     if not webhook and not args.dry_run:
@@ -1390,6 +1390,7 @@ def cmd_monitor_replies(args):
 
 def main():
     parser = argparse.ArgumentParser(
+        prog="python -m waa",
         description="Website Audit Agent — Find leads, audit sites, send cold emails",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -1567,7 +1568,7 @@ Examples:
   python audit_agent.py campaign --reset
         """,
     )
-    p_campaign.add_argument("--input-csv", default="agent_input.csv", help="CSV with niche,location columns (default: agent_input.csv)")
+    p_campaign.add_argument("--input-csv", default="data/agent_input.csv", help="CSV with niche,location columns (default: data/agent_input.csv)")
     p_campaign.add_argument("--serper-limit", type=int, default=DEFAULT_SERPER_DAILY_LIMIT, help=f"Max Serper queries per day (default: {DEFAULT_SERPER_DAILY_LIMIT})")
     p_campaign.add_argument("--email-limit", type=int, default=DEFAULT_EMAIL_DAILY_LIMIT, help=f"Max emails per day (default: {DEFAULT_EMAIL_DAILY_LIMIT})")
     p_campaign.add_argument("--count", type=int, default=20, help="Max URLs to prospect per combo (default: 20)")

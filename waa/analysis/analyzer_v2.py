@@ -37,11 +37,11 @@ from typing import Optional
 
 import anthropic
 
-import config
-import personalization
-from personalization import SiteFacts
-import prompts_v2
-from analyzer import _call_llm, _parse_json_response, _clean_email_body, strip_ai_dashes
+from waa import config
+from waa.analysis import personalization
+from waa.analysis.personalization import SiteFacts
+from waa.analysis import prompts_v2
+from waa.analysis.analyzer import _call_llm, _parse_json_response, _clean_email_body, strip_ai_dashes
 
 logger = logging.getLogger(__name__)
 

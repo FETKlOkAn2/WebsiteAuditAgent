@@ -20,7 +20,7 @@ from datetime import datetime
 from email.mime.text import MIMEText
 from email.utils import formatdate, make_msgid
 
-import config
+from waa import config
 
 logger = logging.getLogger(__name__)
 

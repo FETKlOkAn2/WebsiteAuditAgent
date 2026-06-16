@@ -650,7 +650,7 @@ def audit_conversion(html: str, url: str, niche: str = "", location: str = "") -
 if __name__ == "__main__":
     import sys
     import json
-    from scraper import fetch_html
+    from waa.discovery.scraper import fetch_html
 
     if len(sys.argv) < 2:
         print("Usage: python conversion_audit.py <url> [niche] [location]")

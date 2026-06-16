@@ -28,7 +28,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
-import config
+from waa import config
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +285,7 @@ def _titlecase(name: str) -> str:
 if __name__ == "__main__":
     import sys
     import json
-    from scraper import fetch_html, extract_contact_emails
+    from waa.discovery.scraper import fetch_html, extract_contact_emails
 
     if len(sys.argv) < 2:
         print("Usage: python owner_finder.py <url>")

@@ -13,7 +13,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-import preview_report  # noqa: E402
+import waa.proof.preview_report as preview_report  # noqa: E402
 
 
 def _result(**kw):

@@ -56,8 +56,8 @@ from typing import Optional
 
 import requests
 
-import config
-from storage import domain_of, JsonStore
+from waa import config
+from waa.core.storage import domain_of, JsonStore
 
 logger = logging.getLogger(__name__)
 

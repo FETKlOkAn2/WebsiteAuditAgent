@@ -10,7 +10,7 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
-import config
+from waa import config
 
 logger = logging.getLogger(__name__)
 

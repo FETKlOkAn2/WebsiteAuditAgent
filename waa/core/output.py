@@ -8,7 +8,7 @@ import os
 import logging
 from datetime import datetime
 
-import config
+from waa import config
 
 logger = logging.getLogger(__name__)
 

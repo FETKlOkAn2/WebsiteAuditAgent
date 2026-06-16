@@ -22,10 +22,10 @@ if ROOT not in sys.path:
 os.environ.setdefault("OUTPUT_DIR", tempfile.mkdtemp(prefix="v2_tests_"))
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
 
-import config  # noqa: E402
-import personalization  # noqa: E402
-import prompts_v2  # noqa: E402
-import analyzer_v2  # noqa: E402
+import waa.config as config  # noqa: E402
+import waa.analysis.personalization as personalization  # noqa: E402
+import waa.analysis.prompts_v2 as prompts_v2  # noqa: E402
+import waa.analysis.analyzer_v2 as analyzer_v2  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -294,13 +294,13 @@ class TestFactValidator(unittest.TestCase):
 
 class TestProcessSingleV2(unittest.TestCase):
 
-    @patch("scraper.fetch_pagespeed", return_value={"available": False})
-    @patch("scraper.fetch_html")
+    @patch("waa.discovery.scraper.fetch_pagespeed", return_value={"available": False})
+    @patch("waa.discovery.scraper.fetch_html")
     @patch.object(analyzer_v2, "_call_llm", return_value=EMAIL_QUOTING_FACT)
     def test_v2_path_produces_email_with_validation_metadata(
         self, _mock_llm, mock_fetch, _mock_ps
     ):
-        from audit_agent import process_single
+        from waa.cli import process_single
 
         mock_fetch.return_value = {
             "url": "https://ukarola.example", "status_code": 200,
@@ -320,10 +320,10 @@ class TestProcessSingleV2(unittest.TestCase):
         self.assertEqual(result["analysis"]["audit_mode"], "v2")
         self.assertEqual(result["analysis"]["lang"], "sk")
 
-    @patch("scraper.fetch_pagespeed", return_value={"available": False})
-    @patch("scraper.fetch_html")
+    @patch("waa.discovery.scraper.fetch_pagespeed", return_value={"available": False})
+    @patch("waa.discovery.scraper.fetch_html")
     def test_v2_skips_when_site_too_thin(self, mock_fetch, _ps):
-        from audit_agent import process_single
+        from waa.cli import process_single
 
         mock_fetch.return_value = {
             "url": "https://thin.example", "status_code": 200,
@@ -344,10 +344,10 @@ class TestProcessSingleV2(unittest.TestCase):
 
 
 class TestDashStripping(unittest.TestCase):
-    """analyzer.strip_ai_dashes removes the AI-tell dashes from emails."""
+    """waa.analysis.analyzer.strip_ai_dashes removes the AI-tell dashes from emails."""
 
     def setUp(self):
-        from analyzer import strip_ai_dashes
+        from waa.analysis.analyzer import strip_ai_dashes
         self.strip = strip_ai_dashes
 
     def test_em_dash_becomes_comma(self):
@@ -370,27 +370,27 @@ class TestDashStripping(unittest.TestCase):
         self.assertEqual(self.strip(""), "")
 
     def test_prompts_have_no_dashes(self):
-        import prompts_v2
+        import waa.analysis.prompts_v2 as prompts_v2
         for p in (prompts_v2.EMAIL_PROMPT_SK, prompts_v2.EMAIL_PROMPT_EN):
             self.assertEqual(p.count("—"), 0)
             self.assertEqual(p.count("–"), 0)
 
     def test_prompts_ban_the_repeated_cta(self):
         # The line the user flagged must be explicitly forbidden.
-        import prompts_v2
+        import waa.analysis.prompts_v2 as prompts_v2
         self.assertIn("Je to vedome takto", prompts_v2.EMAIL_PROMPT_SK)
         self.assertIn("ZAKÁZANÉ FRÁZY", prompts_v2.EMAIL_PROMPT_SK)
 
 
 class TestRedesignFraming(unittest.TestCase):
     def test_sk_prompt_pushes_whole_site(self):
-        import prompts_v2
+        import waa.analysis.prompts_v2 as prompts_v2
         body = prompts_v2.EMAIL_PROMPT_SK.lower()
         self.assertIn("celej stránky", body)
         self.assertIn("prerob", body)  # prerobiť / prerábali
 
     def test_en_prompt_pushes_whole_site(self):
-        import prompts_v2
+        import waa.analysis.prompts_v2 as prompts_v2
         body = prompts_v2.EMAIL_PROMPT_EN.lower()
         self.assertIn("whole site", body)
         self.assertIn("redesign", body)

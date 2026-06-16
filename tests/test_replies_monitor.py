@@ -25,10 +25,10 @@ if ROOT not in sys.path:
 TEST_OUT = tempfile.mkdtemp(prefix="replies_tests_")
 os.environ["OUTPUT_DIR"] = TEST_OUT
 
-import config  # noqa: E402
+import waa.config as config  # noqa: E402
 config.OUTPUT_DIR = TEST_OUT
 
-import replies_monitor as rm  # noqa: E402
+import waa.outreach.replies_monitor as rm  # noqa: E402
 # Re-anchor module-level paths after the OUTPUT_DIR override
 rm.REPLIES_SEEN_FILE = os.path.join(TEST_OUT, "replies_seen.json")
 rm.SENT_REGISTRY_FILE = os.path.join(TEST_OUT, "sent_registry.json")
@@ -285,7 +285,7 @@ class TestDiscordPost(unittest.TestCase):
             original_subject="quick note",
         )
 
-    @patch("replies_monitor.requests.post")
+    @patch("waa.outreach.replies_monitor.requests.post")
     def test_post_success(self, mock_post):
         mock_post.return_value.status_code = 204
         ok = rm.post_to_discord(self._r(), webhook_url="https://discord/x")
@@ -304,19 +304,19 @@ class TestDiscordPost(unittest.TestCase):
         self.assertIn("To (our mailbox)", field_names)
         self.assertIn("Original outreach", field_names)
 
-    @patch("replies_monitor.requests.post")
+    @patch("waa.outreach.replies_monitor.requests.post")
     def test_post_failure_returns_false(self, mock_post):
         mock_post.return_value.status_code = 500
         mock_post.return_value.text = "boom"
         ok = rm.post_to_discord(self._r(), webhook_url="https://discord/x")
         self.assertFalse(ok)
 
-    @patch("replies_monitor.requests.post",
+    @patch("waa.outreach.replies_monitor.requests.post",
            side_effect=Exception("network down"))
     def test_post_request_exception_returns_false(self, _mock):
         # network errors should not propagate
         import requests as _req
-        with patch("replies_monitor.requests.post",
+        with patch("waa.outreach.replies_monitor.requests.post",
                    side_effect=_req.RequestException("conn refused")):
             ok = rm.post_to_discord(self._r(), webhook_url="https://x")
         self.assertFalse(ok)
@@ -375,7 +375,7 @@ class TestFetchRecent(unittest.TestCase):
                             subject="Re: another"),
         ]
         fake = _FakeIMAP(raw)
-        with patch("replies_monitor.imaplib.IMAP4_SSL", return_value=fake):
+        with patch("waa.outreach.replies_monitor.imaplib.IMAP4_SSL", return_value=fake):
             mb = rm.MailboxConfig(label="Tomas", email="a@b.com", password="pw")
             replies = rm.fetch_recent(mb)
         self.assertEqual(len(replies), 2)
@@ -386,20 +386,20 @@ class TestFetchRecent(unittest.TestCase):
     def test_unconfigured_mailbox_skipped(self):
         mb = rm.MailboxConfig(label="Erik", email="", password="")
         # Should not even try to connect
-        with patch("replies_monitor.imaplib.IMAP4_SSL") as MockImap:
+        with patch("waa.outreach.replies_monitor.imaplib.IMAP4_SSL") as MockImap:
             replies = rm.fetch_recent(mb)
         self.assertEqual(replies, [])
         MockImap.assert_not_called()
 
     def test_login_failure_returns_empty(self):
         fake = _FakeIMAP([], login_ok=False)
-        with patch("replies_monitor.imaplib.IMAP4_SSL", return_value=fake):
+        with patch("waa.outreach.replies_monitor.imaplib.IMAP4_SSL", return_value=fake):
             mb = rm.MailboxConfig(label="Tomas", email="a@b.com", password="bad")
             replies = rm.fetch_recent(mb)
         self.assertEqual(replies, [])
 
     def test_connect_failure_returns_empty(self):
-        with patch("replies_monitor.imaplib.IMAP4_SSL",
+        with patch("waa.outreach.replies_monitor.imaplib.IMAP4_SSL",
                    side_effect=ConnectionRefusedError("imap down")):
             mb = rm.MailboxConfig(label="Tomas", email="a@b.com", password="pw")
             replies = rm.fetch_recent(mb)
@@ -410,7 +410,7 @@ class TestFetchRecent(unittest.TestCase):
         good = _make_raw_email(from_addr="ok@x.com", msg_id="<ok>")
         # The fake IMAP returns these in order; corrupt first
         fake = _FakeIMAP([b"\x00\x01\x02 not really an email", good])
-        with patch("replies_monitor.imaplib.IMAP4_SSL", return_value=fake):
+        with patch("waa.outreach.replies_monitor.imaplib.IMAP4_SSL", return_value=fake):
             mb = rm.MailboxConfig(label="Tomas", email="a@b.com", password="pw")
             replies = rm.fetch_recent(mb)
         # Even if first parses to empty, second should still return.
@@ -446,8 +446,8 @@ class TestRunOnce(unittest.TestCase):
         with open(rm.SENT_REGISTRY_FILE, "w") as f:
             json.dump(registry, f)
 
-    @patch("replies_monitor.post_to_discord", return_value=True)
-    @patch("replies_monitor.fetch_recent")
+    @patch("waa.outreach.replies_monitor.post_to_discord", return_value=True)
+    @patch("waa.outreach.replies_monitor.fetch_recent")
     def test_posts_genuine_reply_and_skips_noise(self, mock_fetch, mock_post):
         # Three messages: one real reply, one out-of-office, one stranger
         replies = [
@@ -481,8 +481,8 @@ class TestRunOnce(unittest.TestCase):
         self.assertEqual(posted_reply.matched_via, "email")
         self.assertEqual(posted_reply.original_subject, "quick note")
 
-    @patch("replies_monitor.post_to_discord", return_value=True)
-    @patch("replies_monitor.fetch_recent")
+    @patch("waa.outreach.replies_monitor.post_to_discord", return_value=True)
+    @patch("waa.outreach.replies_monitor.fetch_recent")
     def test_does_not_double_post_across_runs(self, mock_fetch, mock_post):
         replies = [
             rm.Reply(sender_mailbox="Tomas",
@@ -501,7 +501,7 @@ class TestRunOnce(unittest.TestCase):
         # Discord webhook called only once across both runs
         self.assertEqual(mock_post.call_count, 1)
 
-    @patch("replies_monitor.fetch_recent")
+    @patch("waa.outreach.replies_monitor.fetch_recent")
     def test_dry_run_does_not_post_or_persist(self, mock_fetch):
         mock_fetch.return_value = [
             rm.Reply(sender_mailbox="Tomas",
@@ -511,7 +511,7 @@ class TestRunOnce(unittest.TestCase):
         ]
         self._write_registry(emails={"owner@x.com": {"subject": "hi"}})
 
-        with patch("replies_monitor.post_to_discord") as mock_post:
+        with patch("waa.outreach.replies_monitor.post_to_discord") as mock_post:
             summary = rm.run_once(webhook_url="https://discord/x", dry_run=True)
         # In dry-run mode `posted` counts what WOULD have been posted
         self.assertEqual(summary["posted"], 1)
@@ -522,8 +522,8 @@ class TestRunOnce(unittest.TestCase):
                 seen = json.load(f)
             self.assertNotIn("<dry-1>", seen.get("keys", []))
 
-    @patch("replies_monitor.post_to_discord")
-    @patch("replies_monitor.fetch_recent")
+    @patch("waa.outreach.replies_monitor.post_to_discord")
+    @patch("waa.outreach.replies_monitor.fetch_recent")
     def test_failed_post_will_retry_next_run(self, mock_fetch, mock_post):
         # First post fails → not added to seen → next run re-tries
         mock_fetch.return_value = [
@@ -541,7 +541,7 @@ class TestRunOnce(unittest.TestCase):
         self.assertEqual(s2["posted"], 1)  # second retried + succeeded
         self.assertEqual(mock_post.call_count, 2)
 
-    @patch("replies_monitor.fetch_recent", return_value=[])
+    @patch("waa.outreach.replies_monitor.fetch_recent", return_value=[])
     def test_no_messages_returns_zero_summary(self, _fetch):
         summary = rm.run_once(webhook_url="https://x")
         self.assertEqual(summary["examined"], 0)

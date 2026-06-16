@@ -33,14 +33,14 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
 os.environ.setdefault("PAGESPEED_API_KEY", "")  # default off for tests
 os.environ.setdefault("SMTP_PASSWORD", "")
 
-import config  # noqa: E402
+import waa.config as config  # noqa: E402
 config.OUTPUT_DIR = TEST_OUTPUT_DIR
 
-import scraper  # noqa: E402
-import analyzer  # noqa: E402
-import output  # noqa: E402
-import sender  # noqa: E402
-import conversion_audit  # noqa: E402
+import waa.discovery.scraper as scraper  # noqa: E402
+import waa.analysis.analyzer as analyzer  # noqa: E402
+import waa.core.output as output  # noqa: E402
+import waa.outreach.sender as sender  # noqa: E402
+import waa.analysis.conversion_audit as conversion_audit  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +193,7 @@ class TestScraperRobustness(unittest.TestCase):
         self.assertIsNone(tech["cms"])
         self.assertIsInstance(tech["technologies"], list)
 
-    @patch("scraper.requests.get")
+    @patch("waa.discovery.scraper.requests.get")
     def test_fetch_html_handles_timeout(self, mock_get):
         import requests as _r
         mock_get.side_effect = _r.exceptions.Timeout("timed out")
@@ -201,7 +201,7 @@ class TestScraperRobustness(unittest.TestCase):
         self.assertIsNone(result["html"])
         self.assertIsNotNone(result["error"])
 
-    @patch("scraper.requests.get")
+    @patch("waa.discovery.scraper.requests.get")
     def test_fetch_html_handles_404(self, mock_get):
         resp = MagicMock(status_code=404, text="not found", url="https://x.com/404")
         mock_get.return_value = resp
@@ -210,7 +210,7 @@ class TestScraperRobustness(unittest.TestCase):
         self.assertIsNone(result["html"])
         self.assertIn("404", result["error"])
 
-    @patch("scraper.requests.get")
+    @patch("waa.discovery.scraper.requests.get")
     def test_fetch_html_handles_ssl_fallback(self, mock_get):
         import requests as _r
         good = MagicMock(status_code=200, text="<html>ok</html>", url="https://x.com")
@@ -220,7 +220,7 @@ class TestScraperRobustness(unittest.TestCase):
         self.assertEqual(result["status_code"], 200)
         self.assertEqual(result["html"], "<html>ok</html>")
 
-    @patch("scraper.requests.get")
+    @patch("waa.discovery.scraper.requests.get")
     def test_fetch_html_retries_then_gives_up(self, mock_get):
         import requests as _r
         mock_get.side_effect = _r.exceptions.ConnectionError("nope")
@@ -612,11 +612,11 @@ class TestEndToEndPipeline(unittest.TestCase):
     Proves the modules wire together correctly.
     """
 
-    @patch("scraper.fetch_pagespeed", return_value={"available": False})
-    @patch("scraper.fetch_html")
+    @patch("waa.discovery.scraper.fetch_pagespeed", return_value={"available": False})
+    @patch("waa.discovery.scraper.fetch_html")
     @patch.object(analyzer, "_call_llm")
     def test_full_pipeline_happy_path(self, mock_llm, mock_fetch, _ps):
-        from audit_agent import process_single
+        from waa.cli import process_single
 
         mock_fetch.return_value = {
             "url": "https://glowmedspa.example",
@@ -642,10 +642,10 @@ class TestEndToEndPipeline(unittest.TestCase):
         self.assertIsNotNone(result.get("email"))
         self.assertIn("subject_line", result["email"])
 
-    @patch("scraper.fetch_pagespeed", return_value={"available": False})
-    @patch("scraper.fetch_html")
+    @patch("waa.discovery.scraper.fetch_pagespeed", return_value={"available": False})
+    @patch("waa.discovery.scraper.fetch_html")
     def test_pipeline_aborts_cleanly_when_fetch_fails(self, mock_fetch, _ps):
-        from audit_agent import process_single
+        from waa.cli import process_single
         mock_fetch.return_value = {
             "url": "https://dead.example", "status_code": None, "html": None,
             "error": "ConnectTimeout", "load_time_ms": None,
@@ -656,10 +656,10 @@ class TestEndToEndPipeline(unittest.TestCase):
         # Must not have called LLM — and email/analysis are not present
         self.assertNotIn("analysis", result)
 
-    @patch("scraper.fetch_pagespeed", return_value={"available": False})
-    @patch("scraper.fetch_html")
+    @patch("waa.discovery.scraper.fetch_pagespeed", return_value={"available": False})
+    @patch("waa.discovery.scraper.fetch_html")
     def test_pipeline_skips_when_no_contact_email_required(self, mock_fetch, _ps):
-        from audit_agent import process_single
+        from waa.cli import process_single
 
         # Page has no email at all
         html_no_email = "<html><body><h1>Hi</h1></body></html>"
@@ -669,7 +669,7 @@ class TestEndToEndPipeline(unittest.TestCase):
             "final_url": "https://noemail.example",
         }
         # And the contact-page fallback also yields nothing
-        with patch("scraper.scrape_contact_page", return_value=[]):
+        with patch("waa.discovery.scraper.scrape_contact_page", return_value=[]):
             result = process_single(
                 "https://noemail.example", skip_pagespeed=True,
                 require_email=True,
@@ -678,15 +678,15 @@ class TestEndToEndPipeline(unittest.TestCase):
         self.assertIsNone(result.get("analysis"))
         self.assertIsNone(result.get("email"))
 
-    @patch("scraper.fetch_pagespeed", return_value={"available": False})
-    @patch("scraper.fetch_html")
+    @patch("waa.discovery.scraper.fetch_pagespeed", return_value={"available": False})
+    @patch("waa.discovery.scraper.fetch_html")
     @patch.object(analyzer, "_call_llm")
     def test_pipeline_to_output_to_send_dry_run(self, mock_llm, mock_fetch, _ps):
         """
         End-to-end: scrape → analyze → save json → load json → dry-run send.
         Catches contract drift between analyzer output and sender input.
         """
-        from audit_agent import process_single
+        from waa.cli import process_single
 
         mock_fetch.return_value = {
             "url": "https://glowmedspa.example", "status_code": 200,
@@ -722,12 +722,12 @@ class TestCampaignStateRobustness(unittest.TestCase):
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp(prefix="campaign_state_")
-        # Re-import audit_agent with patched OUTPUT_DIR
+        # Re-import waa.cli as audit_agent with patched OUTPUT_DIR
         self._old_dir = config.OUTPUT_DIR
         config.OUTPUT_DIR = self.tmpdir
         # audit_agent computes module-level paths from config.OUTPUT_DIR,
         # so we must patch the module attributes directly.
-        import audit_agent
+        import waa.cli as audit_agent
         self.audit_agent = audit_agent
         self._old_progress = audit_agent.CAMPAIGN_PROGRESS_FILE
         self._old_registry = audit_agent.SENT_REGISTRY_FILE
@@ -805,7 +805,7 @@ class TestCSVLoaders(unittest.TestCase):
         return path
 
     def test_load_urls_recognizes_website_url_column(self):
-        from audit_agent import load_urls_from_csv
+        from waa.cli import load_urls_from_csv
         path = self._write("p.csv",
             "website_url,name\nhttps://a.com,Alpha\nhttps://b.com,Beta\n")
         urls = load_urls_from_csv(path)
@@ -814,27 +814,27 @@ class TestCSVLoaders(unittest.TestCase):
         self.assertEqual(urls[0]["name"], "Alpha")
 
     def test_load_urls_falls_back_to_first_column(self):
-        from audit_agent import load_urls_from_csv
+        from waa.cli import load_urls_from_csv
         path = self._write("p.csv", "site\nhttps://a.com\nhttps://b.com\n")
         urls = load_urls_from_csv(path)
         self.assertEqual(len(urls), 2)
         self.assertEqual(urls[0]["url"], "https://a.com")
 
     def test_load_urls_skips_blank_rows(self):
-        from audit_agent import load_urls_from_csv
+        from waa.cli import load_urls_from_csv
         path = self._write("p.csv",
             "website_url,name\nhttps://a.com,Alpha\n,\nhttps://b.com,Beta\n")
         urls = load_urls_from_csv(path)
         self.assertEqual(len(urls), 2)
 
     def test_load_urls_handles_empty_file(self):
-        from audit_agent import load_urls_from_csv
+        from waa.cli import load_urls_from_csv
         path = self._write("p.csv", "")
         urls = load_urls_from_csv(path)
         self.assertEqual(urls, [])
 
     def test_load_contacts_normalizes_domain(self):
-        from audit_agent import load_contacts_csv
+        from waa.cli import load_contacts_csv
         path = self._write("c.csv",
             "website,email,name\n"
             "https://www.X.com/path,owner@x.com,Owner\n"
@@ -847,7 +847,7 @@ class TestCSVLoaders(unittest.TestCase):
         self.assertIn("missing.com", contacts)
 
     def test_load_contacts_skips_rows_missing_email(self):
-        from audit_agent import load_contacts_csv
+        from waa.cli import load_contacts_csv
         path = self._write("c.csv",
             "website,email\nhttps://x.com,\nhttps://y.com,b@y.com\n")
         contacts = load_contacts_csv(path)

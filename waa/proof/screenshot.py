@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-from storage import domain_of
+from waa.core.storage import domain_of
 
 logger = logging.getLogger(__name__)
 

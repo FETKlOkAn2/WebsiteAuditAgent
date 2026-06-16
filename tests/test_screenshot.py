@@ -22,8 +22,8 @@ if ROOT not in sys.path:
 os.environ.setdefault("OUTPUT_DIR", "/tmp/audit_screenshot_tests")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
 
-import audit_agent  # noqa: E402
-from screenshot import HighlightTarget, ScreenshotResult  # noqa: E402
+import waa.cli as audit_agent  # noqa: E402
+from waa.proof.screenshot import HighlightTarget, ScreenshotResult  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +157,7 @@ class TestAttachScreenshots(unittest.TestCase):
                 "https://good.example", path="/tmp/good.png",
                 annotated=True, target_found=True),
         })
-        with patch("screenshot.PageScreenshotter", return_value=fake):
+        with patch("waa.proof.screenshot.PageScreenshotter", return_value=fake):
             n = audit_agent.attach_screenshots(results, lang="sk")
         self.assertEqual(n, 1)
         self.assertIn("screenshot", results[0])
@@ -173,7 +173,7 @@ class TestAttachScreenshots(unittest.TestCase):
             "https://good.example": ScreenshotResult("https://good.example", path="/tmp/a.png"),
             "https://thin.example": ScreenshotResult("https://thin.example", path="/tmp/b.png"),
         })
-        with patch("screenshot.PageScreenshotter", return_value=fake):
+        with patch("waa.proof.screenshot.PageScreenshotter", return_value=fake):
             n = audit_agent.attach_screenshots(results, lang="sk", only_with_target=False)
         self.assertEqual(n, 2)  # errored one still skipped
 
@@ -183,7 +183,7 @@ class TestAttachScreenshots(unittest.TestCase):
             "https://good.example": ScreenshotResult(
                 "https://good.example", error="TimeoutError"),
         })
-        with patch("screenshot.PageScreenshotter", return_value=fake):
+        with patch("waa.proof.screenshot.PageScreenshotter", return_value=fake):
             n = audit_agent.attach_screenshots(results, lang="sk")
         self.assertEqual(n, 0)
         self.assertNotIn("screenshot", results[0])
@@ -200,7 +200,7 @@ class TestAttachScreenshots(unittest.TestCase):
         results = [{"url": "https://thin.example",
                     "analysis": {"facts": {"surprising_finding": "", "primary_cta_text": None}}}]
         # PageScreenshotter must never be constructed when there are no jobs.
-        with patch("screenshot.PageScreenshotter") as MockShot:
+        with patch("waa.proof.screenshot.PageScreenshotter") as MockShot:
             n = audit_agent.attach_screenshots(results, lang="sk")
         self.assertEqual(n, 0)
         MockShot.assert_not_called()

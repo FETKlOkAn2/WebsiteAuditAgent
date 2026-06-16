@@ -17,7 +17,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-import email_validator as ev  # noqa: E402
+import waa.outreach.email_validator as ev  # noqa: E402
 
 
 # Helper to build fake DNS answer objects
@@ -69,7 +69,7 @@ class TestSyntaxAndRoleChecks(unittest.TestCase):
         self.assertEqual(r.status, "invalid")
 
     def test_whitespace_trimmed(self):
-        with patch("email_validator.dns.resolver.resolve") as mock_resolve:
+        with patch("waa.outreach.email_validator.dns.resolver.resolve") as mock_resolve:
             _setup_mx(mock_resolve, ["mx.x.com"])
             r = ev.validate_email("  USER@X.COM  ", smtp_probe=False)
         self.assertEqual(r.email, "user@x.com")
@@ -81,7 +81,7 @@ class TestSyntaxAndRoleChecks(unittest.TestCase):
         self.assertIn("role account", r.reason)
 
     def test_role_account_disabled(self):
-        with patch("email_validator.dns.resolver.resolve") as mock_resolve:
+        with patch("waa.outreach.email_validator.dns.resolver.resolve") as mock_resolve:
             _setup_mx(mock_resolve, ["mx.example.com"])
             r = ev.validate_email("info@example.com",
                                    skip_role_accounts=False, smtp_probe=False)
@@ -97,20 +97,20 @@ class TestMXLookup(unittest.TestCase):
     def setUp(self):
         ev.reset_caches()
 
-    @patch("email_validator.dns.resolver.resolve")
+    @patch("waa.outreach.email_validator.dns.resolver.resolve")
     def test_mx_found(self, mock_resolve):
         _setup_mx(mock_resolve, ["mx.example.com"])
         hosts = ev._resolve_mx("example.com")
         self.assertEqual(hosts, ["mx.example.com"])
 
-    @patch("email_validator.dns.resolver.resolve")
+    @patch("waa.outreach.email_validator.dns.resolver.resolve")
     def test_mx_sorted_by_preference(self, mock_resolve):
         # Higher pref number = lower priority. Should come last.
         mock_resolve.return_value = _fake_mx((50, "mx3"), (10, "mx1"), (20, "mx2"))
         hosts = ev._resolve_mx("example.com")
         self.assertEqual(hosts, ["mx1", "mx2", "mx3"])
 
-    @patch("email_validator.dns.resolver.resolve")
+    @patch("waa.outreach.email_validator.dns.resolver.resolve")
     def test_no_mx_a_fallback(self, mock_resolve):
         # First call (MX) raises NoAnswer, second (A) returns OK
         mock_resolve.side_effect = [
@@ -120,7 +120,7 @@ class TestMXLookup(unittest.TestCase):
         hosts = ev._resolve_mx("only-a-record.com")
         self.assertEqual(hosts, ["only-a-record.com"])
 
-    @patch("email_validator.dns.resolver.resolve")
+    @patch("waa.outreach.email_validator.dns.resolver.resolve")
     def test_no_mx_no_a_returns_none(self, mock_resolve):
         mock_resolve.side_effect = [
             ev.dns.resolver.NoAnswer(),
@@ -131,16 +131,16 @@ class TestMXLookup(unittest.TestCase):
         self.assertIsNone(hosts)
 
     def test_nxdomain_returns_none(self):
-        with patch("email_validator.dns.resolver.resolve",
+        with patch("waa.outreach.email_validator.dns.resolver.resolve",
                    side_effect=ev.dns.resolver.NXDOMAIN()):
             self.assertIsNone(ev._resolve_mx("nx.invalid"))
 
     def test_dns_timeout_returns_none(self):
-        with patch("email_validator.dns.resolver.resolve",
+        with patch("waa.outreach.email_validator.dns.resolver.resolve",
                    side_effect=ev.dns.exception.Timeout()):
             self.assertIsNone(ev._resolve_mx("slow.invalid"))
 
-    @patch("email_validator.dns.resolver.resolve")
+    @patch("waa.outreach.email_validator.dns.resolver.resolve")
     def test_mx_cache_hits_only_once(self, mock_resolve):
         _setup_mx(mock_resolve, ["mx.cached.com"])
         ev._resolve_mx("cached.com")
@@ -173,34 +173,34 @@ class TestSMTPProbe(unittest.TestCase):
 
     def test_probe_returns_rcpt_code(self):
         m = self._mock_smtp(rcpt_code=250, rcpt_msg=b"recipient OK")
-        with patch("email_validator.smtplib.SMTP", return_value=m):
+        with patch("waa.outreach.email_validator.smtplib.SMTP", return_value=m):
             code, msg = ev._smtp_probe("mx.x.com", "v@x.com", "u@x.com")
         self.assertEqual(code, 250)
         self.assertIn("OK", msg)
 
     def test_probe_returns_550_for_unknown_user(self):
         m = self._mock_smtp(rcpt_code=550, rcpt_msg=b"User unknown")
-        with patch("email_validator.smtplib.SMTP", return_value=m):
+        with patch("waa.outreach.email_validator.smtplib.SMTP", return_value=m):
             code, msg = ev._smtp_probe("mx.x.com", "v@x.com", "u@x.com")
         self.assertEqual(code, 550)
         self.assertIn("unknown", msg)
 
     def test_probe_falls_back_to_helo_when_ehlo_fails(self):
         m = self._mock_smtp(rcpt_code=250, ehlo_raises=True)
-        with patch("email_validator.smtplib.SMTP", return_value=m):
+        with patch("waa.outreach.email_validator.smtplib.SMTP", return_value=m):
             code, _ = ev._smtp_probe("mx.x.com", "v@x.com", "u@x.com")
         self.assertEqual(code, 250)
         m.helo.assert_called_once()
 
     def test_probe_handles_connection_refused(self):
-        with patch("email_validator.smtplib.SMTP") as MockSMTP:
+        with patch("waa.outreach.email_validator.smtplib.SMTP") as MockSMTP:
             MockSMTP.return_value.connect.side_effect = ConnectionRefusedError()
             code, msg = ev._smtp_probe("mx.x.com", "v@x.com", "u@x.com")
         self.assertIsNone(code)
         self.assertIn("ConnectionRefusedError", msg)
 
     def test_probe_handles_timeout(self):
-        with patch("email_validator.smtplib.SMTP") as MockSMTP:
+        with patch("waa.outreach.email_validator.smtplib.SMTP") as MockSMTP:
             import socket
             MockSMTP.return_value.connect.side_effect = socket.timeout()
             code, _ = ev._smtp_probe("mx.x.com", "v@x.com", "u@x.com")
@@ -208,14 +208,14 @@ class TestSMTPProbe(unittest.TestCase):
 
     def test_probe_always_calls_quit_or_close(self):
         m = self._mock_smtp()
-        with patch("email_validator.smtplib.SMTP", return_value=m):
+        with patch("waa.outreach.email_validator.smtplib.SMTP", return_value=m):
             ev._smtp_probe("mx.x.com", "v@x.com", "u@x.com")
         # quit OR close must have been attempted
         self.assertTrue(m.quit.called or m.close.called)
 
     def test_probe_resets_after_rcpt(self):
         m = self._mock_smtp()
-        with patch("email_validator.smtplib.SMTP", return_value=m):
+        with patch("waa.outreach.email_validator.smtplib.SMTP", return_value=m):
             ev._smtp_probe("mx.x.com", "v@x.com", "u@x.com")
         # rset is best-effort — should be invoked but tolerate failure
         m.rset.assert_called()
@@ -230,8 +230,8 @@ class TestValidateEmail(unittest.TestCase):
     def setUp(self):
         ev.reset_caches()
 
-    @patch("email_validator.smtplib.SMTP")
-    @patch("email_validator.dns.resolver.resolve")
+    @patch("waa.outreach.email_validator.smtplib.SMTP")
+    @patch("waa.outreach.email_validator.dns.resolver.resolve")
     def test_valid_address(self, mock_resolve, mock_smtp):
         _setup_mx(mock_resolve, ["mx.example.com"])
         m = MagicMock()
@@ -247,8 +247,8 @@ class TestValidateEmail(unittest.TestCase):
         self.assertEqual(r.smtp_code, 250)
         self.assertTrue(r.is_safe_to_send())
 
-    @patch("email_validator.smtplib.SMTP")
-    @patch("email_validator.dns.resolver.resolve")
+    @patch("waa.outreach.email_validator.smtplib.SMTP")
+    @patch("waa.outreach.email_validator.dns.resolver.resolve")
     def test_invalid_address_5xx(self, mock_resolve, mock_smtp):
         _setup_mx(mock_resolve, ["mx.example.com"])
         m = MagicMock()
@@ -263,8 +263,8 @@ class TestValidateEmail(unittest.TestCase):
         self.assertEqual(r.smtp_code, 550)
         self.assertFalse(r.is_safe_to_send())
 
-    @patch("email_validator.smtplib.SMTP")
-    @patch("email_validator.dns.resolver.resolve")
+    @patch("waa.outreach.email_validator.smtplib.SMTP")
+    @patch("waa.outreach.email_validator.dns.resolver.resolve")
     def test_4xx_greylist_treated_as_catch_all(self, mock_resolve, mock_smtp):
         # 4xx is transient (greylist, throttle). Server is alive. Treat as
         # catch_all so we keep the address; a real send will likely succeed.
@@ -281,8 +281,8 @@ class TestValidateEmail(unittest.TestCase):
         self.assertEqual(r.smtp_code, 450)
         self.assertTrue(r.is_safe_to_send())
 
-    @patch("email_validator.smtplib.SMTP")
-    @patch("email_validator.dns.resolver.resolve")
+    @patch("waa.outreach.email_validator.smtplib.SMTP")
+    @patch("waa.outreach.email_validator.dns.resolver.resolve")
     def test_smtp_blocked_with_mx_treated_as_catch_all(self, mock_resolve, mock_smtp):
         # Common case: Gmail/Outlook block port 25 from random IPs. We resolve
         # MX successfully but can't probe. Should NOT drop the address.
@@ -294,8 +294,8 @@ class TestValidateEmail(unittest.TestCase):
         self.assertTrue(r.is_safe_to_send())
         self.assertIn("smtp probe blocked", r.reason)
 
-    @patch("email_validator.smtplib.SMTP")
-    @patch("email_validator.dns.resolver.resolve")
+    @patch("waa.outreach.email_validator.smtplib.SMTP")
+    @patch("waa.outreach.email_validator.dns.resolver.resolve")
     def test_catch_all_domain_marked(self, mock_resolve, mock_smtp):
         _setup_mx(mock_resolve, ["mx.catchall.com"])
         m = MagicMock()
@@ -310,29 +310,29 @@ class TestValidateEmail(unittest.TestCase):
         self.assertEqual(r.status, "catch_all")
         self.assertTrue(r.is_safe_to_send())
 
-    @patch("email_validator.dns.resolver.resolve",
+    @patch("waa.outreach.email_validator.dns.resolver.resolve",
            side_effect=ev.dns.resolver.NXDOMAIN())
     def test_no_mx_marks_invalid(self, _resolve):
         r = ev.validate_email("nobody@nowhere.invalid", smtp_probe=False)
         self.assertEqual(r.status, "invalid")
         self.assertIn("no MX", r.reason)
 
-    @patch("email_validator.dns.resolver.resolve")
+    @patch("waa.outreach.email_validator.dns.resolver.resolve")
     def test_mx_only_mode(self, mock_resolve):
         _setup_mx(mock_resolve, ["mx.example.com"])
         r = ev.validate_email("anyone@example.com", smtp_probe=False)
         self.assertEqual(r.status, "catch_all")
         self.assertIn("mx-only", r.reason)
 
-    @patch("email_validator.dns.resolver.resolve")
+    @patch("waa.outreach.email_validator.dns.resolver.resolve")
     def test_role_account_short_circuits_before_mx(self, mock_resolve):
         r = ev.validate_email("noreply@example.com")
         self.assertEqual(r.status, "risky")
         # No DNS call should have been made
         mock_resolve.assert_not_called()
 
-    @patch("email_validator.smtplib.SMTP")
-    @patch("email_validator.dns.resolver.resolve")
+    @patch("waa.outreach.email_validator.smtplib.SMTP")
+    @patch("waa.outreach.email_validator.dns.resolver.resolve")
     def test_elapsed_ms_recorded(self, mock_resolve, mock_smtp):
         _setup_mx(mock_resolve, ["mx.example.com"])
         m = MagicMock()
@@ -357,14 +357,14 @@ class TestValidateBatch(unittest.TestCase):
 
     def test_batch_preserves_order(self):
         emails = ["a@b.com", "INVALID", "c@d.com"]
-        with patch("email_validator.dns.resolver.resolve") as mock_resolve:
+        with patch("waa.outreach.email_validator.dns.resolver.resolve") as mock_resolve:
             _setup_mx(mock_resolve, ["mx"])
             results, _ = ev.validate_emails(emails, smtp_probe=False)
         self.assertEqual([r.email for r in results],
                           ["a@b.com", "invalid", "c@d.com"])
 
     def test_batch_records_stats(self):
-        with patch("email_validator.dns.resolver.resolve") as mock_resolve:
+        with patch("waa.outreach.email_validator.dns.resolver.resolve") as mock_resolve:
             _setup_mx(mock_resolve, ["mx"])
             results, stats = ev.validate_emails(
                 ["good@example.com", "noreply@example.com", "bad-syntax"],
@@ -377,7 +377,7 @@ class TestValidateBatch(unittest.TestCase):
 
     def test_batch_survives_validator_crash(self):
         # Inject a TypeError mid-flight; the batch must keep going.
-        with patch("email_validator.validate_email",
+        with patch("waa.outreach.email_validator.validate_email",
                    side_effect=[TypeError("boom"),
                                 ev.EmailValidationResult(
                                     email="ok@x.com", status="valid",
@@ -426,8 +426,8 @@ class TestPrepareSendListWithValidator(unittest.TestCase):
             },
         ]
 
-    @patch("email_validator.dns.resolver.resolve")
-    @patch("email_validator.smtplib.SMTP")
+    @patch("waa.outreach.email_validator.dns.resolver.resolve")
+    @patch("waa.outreach.email_validator.smtplib.SMTP")
     def test_validator_drops_dead_addresses(self, mock_smtp, mock_resolve):
         # All three domains have MX. Only one accepts the recipient.
         _setup_mx(mock_resolve, ["mx.fake"])
@@ -449,7 +449,7 @@ class TestPrepareSendListWithValidator(unittest.TestCase):
         mock_smtp.return_value = m
 
         # Override sent registry to a fresh empty file
-        from audit_agent import _save_sent_registry, _prepare_send_list
+        from waa.cli import _save_sent_registry, _prepare_send_list
         _save_sent_registry({"emails": {}, "domains": {}})
 
         send_list = _prepare_send_list(
@@ -465,7 +465,7 @@ class TestPrepareSendListWithValidator(unittest.TestCase):
         self.assertNotIn("info@rolesite.com", addrs)
 
     def test_validator_disabled_keeps_everything(self):
-        from audit_agent import _save_sent_registry, _prepare_send_list
+        from waa.cli import _save_sent_registry, _prepare_send_list
         _save_sent_registry({"emails": {}, "domains": {}})
 
         send_list = _prepare_send_list(
@@ -479,8 +479,8 @@ class TestPrepareSendListWithValidator(unittest.TestCase):
             "info@rolesite.com",
         })
 
-    @patch("email_validator.dns.resolver.resolve")
-    @patch("email_validator.smtplib.SMTP")
+    @patch("waa.outreach.email_validator.dns.resolver.resolve")
+    @patch("waa.outreach.email_validator.smtplib.SMTP")
     def test_keep_risky_keeps_role_accounts(self, mock_smtp, mock_resolve):
         _setup_mx(mock_resolve, ["mx.fake"])
         m = MagicMock()
@@ -493,7 +493,7 @@ class TestPrepareSendListWithValidator(unittest.TestCase):
         ]
         mock_smtp.return_value = m
 
-        from audit_agent import _save_sent_registry, _prepare_send_list
+        from waa.cli import _save_sent_registry, _prepare_send_list
         _save_sent_registry({"emails": {}, "domains": {}})
 
         send_list = _prepare_send_list(

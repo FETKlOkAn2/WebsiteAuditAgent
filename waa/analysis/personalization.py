@@ -26,7 +26,7 @@ from urllib.parse import urlparse, urljoin
 
 from bs4 import BeautifulSoup
 
-import conversion_audit
+from waa.analysis import conversion_audit
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +224,7 @@ def _detect_city_from_page(soup: BeautifulSoup) -> Optional[str]:
 if __name__ == "__main__":
     import sys
     import json
-    from scraper import fetch_html
+    from waa.discovery.scraper import fetch_html
 
     if len(sys.argv) < 2:
         print("Usage: python personalization.py <url> [niche] [location]")

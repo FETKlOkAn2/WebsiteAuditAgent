@@ -43,10 +43,10 @@ cp .env.example .env
 # Edit .env — add your API keys (see Configuration below)
 
 # 3. Run a single pipeline
-python audit_agent.py pipeline --niche "medspa" --location "Scottsdale" --send
+python -m waa pipeline --niche "medspa" --location "Scottsdale" --send
 
 # 4. Or run the full campaign (loops through all niches, respects daily limits)
-python audit_agent.py campaign --send --confirm-send
+python -m waa campaign --send --confirm-send
 ```
 
 ## Commands
@@ -57,16 +57,16 @@ Reads `agent_input.csv`, runs the full pipeline for each niche/location pair, st
 
 ```bash
 # Dry run (no emails sent)
-python audit_agent.py campaign
+python -m waa campaign
 
 # Send emails for real
-python audit_agent.py campaign --send --confirm-send
+python -m waa campaign --send --confirm-send
 
 # Reset progress and start from scratch
-python audit_agent.py campaign --reset
+python -m waa campaign --reset
 
 # Custom limits
-python audit_agent.py campaign --serper-limit 100 --email-limit 30
+python -m waa campaign --serper-limit 100 --email-limit 30
 ```
 
 ### `pipeline` — Single niche run
@@ -74,8 +74,8 @@ python audit_agent.py campaign --serper-limit 100 --email-limit 30
 Find leads, audit them, optionally send emails — one command.
 
 ```bash
-python audit_agent.py pipeline --niche "dentist" --location "Miami FL" --send --confirm-send
-python audit_agent.py pipeline --niche "plumber" --location "Austin TX" --audit-top 5
+python -m waa pipeline --niche "dentist" --location "Miami FL" --send --confirm-send
+python -m waa pipeline --niche "plumber" --location "Austin TX" --audit-top 5
 ```
 
 ### `prospect` — Find leads only
@@ -83,7 +83,7 @@ python audit_agent.py pipeline --niche "plumber" --location "Austin TX" --audit-
 Search for businesses and score them by website quality.
 
 ```bash
-python audit_agent.py prospect --niche "medspa" --location "Dallas" --count 30
+python -m waa prospect --niche "medspa" --location "Dallas" --count 30
 ```
 
 ### `audit` — Analyze specific sites
@@ -91,18 +91,18 @@ python audit_agent.py prospect --niche "medspa" --location "Dallas" --count 30
 Audit a CSV of URLs or a single site.
 
 ```bash
-python audit_agent.py audit sites.csv
-python audit_agent.py audit --url https://some-business.com
+python -m waa audit sites.csv
+python -m waa audit --url https://some-business.com
 ```
 
 ### `send` — Send emails from audit results
 
 ```bash
 # Preview (dry run)
-python audit_agent.py send output/audit_results.json
+python -m waa send output/audit_results.json
 
 # Actually send
-python audit_agent.py send output/audit_results.json --confirm-send
+python -m waa send output/audit_results.json --confirm-send
 ```
 
 ## Configuration
@@ -230,23 +230,47 @@ The prospector automatically skips 60+ non-business domains:
 
 ## Project Structure
 
+The application lives in the `waa/` package, grouped by responsibility.
+Run it with `python -m waa <command>` (or `waa <command>` after
+`pip install -e .`).
+
 ```
-audit_agent.py    — CLI entry point (5 commands: prospect, audit, send, pipeline, campaign)
-prospector.py     — Serper/DuckDuckGo search, quick qualification, lead scoring
-scraper.py        — HTML fetching, SEO signal extraction, tech stack detection,
-                    contact email extraction, PageSpeed API
-analyzer.py       — Claude API integration for audit analysis + email generation
-prompts.py        — LLM prompts (separated for easy A/B testing)
-sender.py         — Zoho Mail SMTP sending with rate limiting
-output.py         — JSON/CSV output formatting
-config.py         — Environment variable loading
+waa/
+  __main__.py          — `python -m waa` entry point
+  cli.py               — all commands + argparse (prospect, preview, audit,
+                         send, pipeline, campaign, monitor-replies, send-followups)
+  config.py            — env / .env loading (reads .env from the repo root)
+  core/
+    storage.py         — domain_of(), JsonStore (load-or-default + save)
+    output.py          — JSON/CSV output + summaries
+  discovery/
+    prospector.py      — OpenStreetMap (primary) + Serper/DuckDuckGo search,
+                         quick qualification, lead scoring
+    scraper.py         — HTML fetch, SEO signals, tech-stack + contact emails
+  analysis/
+    conversion_audit.py — conversion-grade findings (CTA, trust, niche, etc.)
+    personalization.py  — SiteFacts extraction + personalizable gate
+    owner_finder.py     — owner first-name extraction (for greetings)
+    analyzer.py         — Claude calls, JSON parsing, dash stripping (v1)
+    analyzer_v2.py      — fact-grounded orchestration + citation validator
+    prompts.py / prompts_v2.py — LLM prompts (v1 and v2/SK+EN)
+  outreach/
+    sender.py           — Zoho SMTP, Message-ID threading, rate limiting
+    email_validator.py  — 5-level address validation (syntax→MX→SMTP probe)
+    replies_monitor.py  — IMAP poll all mailboxes → Discord webhook
+  proof/
+    screenshot.py       — annotated "proof" screenshots (Playwright)
+    preview_report.py   — email + screenshot QA report (HTML)
 
-agent_input.csv   — Niche/location pairs for campaign mode (254 combos)
-.env              — API keys and config (gitignored)
-.env.example      — Template for .env
-
-.github/workflows/daily_campaign.yml — Automated daily runs with multi-sender
-Dockerfile        — Container build for deployment
+data/
+  agent_input.csv      — niche/location pairs for campaign mode
+  sample_*.csv         — example inputs
+tests/                 — 226 offline tests + a real-HTTP smoke test
+docs/                  — RUNNING.md (how-to-run), usage notes
+.github/workflows/     — daily_campaign.yml, replies_monitor.yml
+pyproject.toml         — package metadata + `waa` console entry point
+Dockerfile             — container build (CMD: python -m waa campaign)
+.env                   — API keys and config (gitignored)
 ```
 
 ## Daily Limits (Free Tier)

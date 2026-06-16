@@ -18,7 +18,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from storage import domain_of, JsonStore  # noqa: E402
+from waa.core.storage import domain_of, JsonStore  # noqa: E402
 
 
 class TestDomainOf(unittest.TestCase):

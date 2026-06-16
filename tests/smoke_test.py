@@ -28,16 +28,16 @@ os.environ["OUTPUT_DIR"] = "/tmp/audit_smoke_out"
 os.environ["ANTHROPIC_API_KEY"] = "smoke-test-key"
 os.environ["PAGESPEED_API_KEY"] = ""
 
-import config  # noqa: E402
+import waa.config as config  # noqa: E402
 config.OUTPUT_DIR = "/tmp/audit_smoke_out"
 os.makedirs(config.OUTPUT_DIR, exist_ok=True)
 
-import scraper  # noqa: E402
-import analyzer  # noqa: E402
-import conversion_audit  # noqa: E402
-import output  # noqa: E402
-import sender  # noqa: E402
-from audit_agent import process_single  # noqa: E402
+import waa.discovery.scraper as scraper  # noqa: E402
+import waa.analysis.analyzer as analyzer  # noqa: E402
+import waa.analysis.conversion_audit as conversion_audit  # noqa: E402
+import waa.core.output as output  # noqa: E402
+import waa.outreach.sender as sender  # noqa: E402
+from waa.cli import process_single  # noqa: E402
 
 
 GOOD_HTML = """

@@ -42,7 +42,7 @@ Toto je krok ktorý **vždy sprav ako prvý** pri novom niche/meste. Vygeneruje
 emaily + proof screenshoty do jedného HTML, ktoré otvoríš v prehliadači.
 
 ```bash
-.venv/bin/python audit_agent.py preview --niche restauracia --location Bratislava --count 5 --open
+.venv/bin/python -m waa preview --niche restauracia --location Bratislava --count 5 --open
 ```
 
 - `--niche` — typ biznisu po slovensky (`restauracia`, `kaviaren`, `zubar`,
@@ -65,10 +65,10 @@ Keď si spokojný s kvalitou z kroku 1:
 
 ```bash
 # DRY RUN — vygeneruje a ukáže, ale NEODOŠLE (bezpečné)
-.venv/bin/python audit_agent.py campaign
+.venv/bin/python -m waa campaign
 
 # OSTRÉ ODOSLANIE — naozaj pošle
-.venv/bin/python audit_agent.py campaign --send --confirm-send --email-limit 15
+.venv/bin/python -m waa campaign --send --confirm-send --email-limit 15
 ```
 
 Čo `campaign` robí: prejde `agent_input.csv` (niche/mesto páry) →
@@ -99,10 +99,10 @@ k pôvodnému emailu.
 
 ```bash
 # Najprv ukáž koho by oslovil (nič neodošle)
-.venv/bin/python audit_agent.py send-followups --dry-run
+.venv/bin/python -m waa send-followups --dry-run
 
 # Ostré
-.venv/bin/python audit_agent.py send-followups --confirm-send
+.venv/bin/python -m waa send-followups --confirm-send
 ```
 
 `--after-days 4` (default), `--max-per-run 20` (default). Kto už odpovedal,
@@ -117,10 +117,10 @@ Discord kanála, nech ich vidíte všetci.
 
 ```bash
 # Test bez Discordu (vypíše do konzoly)
-.venv/bin/python audit_agent.py monitor-replies --dry-run
+.venv/bin/python -m waa monitor-replies --dry-run
 
 # Ostré (treba DISCORD_WEBHOOK_URL v .env)
-.venv/bin/python audit_agent.py monitor-replies
+.venv/bin/python -m waa monitor-replies
 ```
 
 Keď ti niekto odpovie *„áno pošli ten screenshot"*, screenshot už máš
@@ -186,18 +186,18 @@ spustiteľný len manuálne cez `Run workflow`).
 
 ```bash
 # QA náhľad (nič neodošle)
-python audit_agent.py preview --niche restauracia --location Bratislava --open
+python -m waa preview --niche restauracia --location Bratislava --open
 
 # Audit jednej stránky + screenshot
-python audit_agent.py audit --url https://example.sk --audit-mode v2 --lang sk --niche restauracia --screenshots
+python -m waa audit --url https://example.sk --audit-mode v2 --lang sk --niche restauracia --screenshots
 
 # Kampaň (dry run / ostrá)
-python audit_agent.py campaign
-python audit_agent.py campaign --send --confirm-send --email-limit 15
+python -m waa campaign
+python -m waa campaign --send --confirm-send --email-limit 15
 
 # Follow-upy
-python audit_agent.py send-followups --confirm-send
+python -m waa send-followups --confirm-send
 
 # Odpovede → Discord
-python audit_agent.py monitor-replies
+python -m waa monitor-replies
 ```

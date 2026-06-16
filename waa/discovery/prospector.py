@@ -30,9 +30,9 @@ from urllib.parse import quote_plus
 import requests
 from bs4 import BeautifulSoup
 
-import config
-from storage import domain_of
-from scraper import fetch_html, extract_seo_signals, detect_tech_stack
+from waa import config
+from waa.core.storage import domain_of
+from waa.discovery.scraper import fetch_html, extract_seo_signals, detect_tech_stack
 
 logger = logging.getLogger(__name__)
 

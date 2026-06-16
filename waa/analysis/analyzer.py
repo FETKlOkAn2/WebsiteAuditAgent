@@ -8,8 +8,8 @@ import logging
 import re
 import anthropic
 
-import config
-from prompts import AUDIT_ANALYSIS_PROMPT, EMAIL_GENERATION_PROMPT
+from waa import config
+from waa.analysis.prompts import AUDIT_ANALYSIS_PROMPT, EMAIL_GENERATION_PROMPT
 
 logger = logging.getLogger(__name__)
 
