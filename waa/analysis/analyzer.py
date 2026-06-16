@@ -42,14 +42,19 @@ def _call_llm(prompt: str, *, model: str | None = None, max_tokens: int = 2000) 
     Pass a cheaper model (e.g. config.QUALIFY_MODEL) for high-volume,
     low-stakes calls like lead qualification.
     """
+    from waa.core import cost
+    cost.enforce_budget()  # raises BudgetExceeded if the run hit its cap (#18)
+
+    used_model = model or config.LLM_MODEL
     client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
     message = client.messages.create(
-        model=model or config.LLM_MODEL,
+        model=used_model,
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
 
+    cost.record_message_usage(message, used_model, label="text")
     return message.content[0].text
 
 
@@ -68,10 +73,14 @@ def _call_llm_vision(
     only needed by the design critic (improvement #6). `model` defaults to the
     cheap vision-capable model so per-lead design critiques stay inexpensive.
     """
+    from waa.core import cost
+    cost.enforce_budget()  # raises BudgetExceeded if the run hit its cap (#18)
+
+    used_model = model or config.VISION_MODEL
     client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
     message = client.messages.create(
-        model=model or config.VISION_MODEL,
+        model=used_model,
         max_tokens=max_tokens,
         messages=[{
             "role": "user",
@@ -86,6 +95,7 @@ def _call_llm_vision(
         }],
     )
 
+    cost.record_message_usage(message, used_model, label="vision")
     return message.content[0].text
 
 

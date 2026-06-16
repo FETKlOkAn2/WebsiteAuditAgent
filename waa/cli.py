@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 
 from waa import config
 from waa.core.storage import domain_of, JsonStore
+from waa.core.cost import reset_meter, get_meter, BudgetExceeded
 from waa.discovery.scraper import analyze_website
 from waa.analysis.analyzer import analyze_audit_data, generate_email
 from waa.core.output import save_json, save_csv, print_summary
@@ -344,13 +345,18 @@ def run_batch(
 
         logger.info(f"[{i}/{total}] Processing: {url}")
 
-        result = process_single(
-            url=url, name=name, skip_pagespeed=skip_pagespeed,
-            agency_name=agency_name, sender_name=sender_name,
-            sender_title=sender_title, require_email=require_email,
-            audit_mode=audit_mode, lang=lang, niche=niche, location=location,
-            qualify=qualify, critique=critique,
-        )
+        try:
+            result = process_single(
+                url=url, name=name, skip_pagespeed=skip_pagespeed,
+                agency_name=agency_name, sender_name=sender_name,
+                sender_title=sender_title, require_email=require_email,
+                audit_mode=audit_mode, lang=lang, niche=niche, location=location,
+                qualify=qualify, critique=critique,
+            )
+        except BudgetExceeded as e:
+            # Per-run cost cap hit (#18): stop here, keep what we have.
+            logger.warning(f"Stopping batch early — {e}")
+            break
         results.append(result)
 
         if result.get("skipped_reason"):
@@ -614,6 +620,13 @@ def attach_screenshots(results: list[dict], *, lang: str = "sk",
 
     logger.info(f"Captured {captured} proof screenshot(s) for {len(jobs)} prospect(s)")
     return captured
+
+
+def _print_cost_summary():
+    """Print this run's LLM cost telemetry (improvement #18)."""
+    meter = get_meter()
+    if meter.calls:
+        print(f"\n  {meter.summary().replace(chr(10), chr(10) + '  ')}\n")
 
 
 def _build_design_critic(args):
@@ -919,6 +932,7 @@ def cmd_audit(args):
             sys.exit(1)
 
     logger.info(f"Starting audit of {len(urls)} website(s)")
+    reset_meter()  # fresh per-run cost telemetry (#18)
 
     if not config.PAGESPEED_API_KEY and not args.skip_pagespeed:
         logger.warning(
@@ -946,6 +960,7 @@ def cmd_audit(args):
     csv_path = save_csv(results, args.output_csv)
 
     print_summary(results)
+    _print_cost_summary()
     print(f"  Results saved to:")
     print(f"    JSON: {json_path}")
     print(f"    CSV:  {csv_path}\n")
@@ -1024,6 +1039,8 @@ def cmd_pipeline(args):
     if not config.ANTHROPIC_API_KEY:
         print("ERROR: ANTHROPIC_API_KEY not set. Add it to .env file.")
         sys.exit(1)
+
+    reset_meter()  # fresh per-run cost telemetry (#18)
 
     # Step 1: Prospect
     print(f"\n{'='*60}")
@@ -1124,6 +1141,7 @@ def cmd_pipeline(args):
             print("  You can provide emails manually:")
             print(f"    python audit_agent.py send {json_path} --contacts contacts.csv\n")
 
+    _print_cost_summary()
     print(f"  Results saved to:")
     print(f"    Prospects: {prospect_csv}")
     print(f"    Audit JSON: {json_path}")
@@ -1185,6 +1203,8 @@ def cmd_campaign(args):
     if not config.ANTHROPIC_API_KEY:
         print("ERROR: ANTHROPIC_API_KEY not set. Add it to .env file.")
         sys.exit(1)
+
+    reset_meter()  # fresh per-run cost telemetry (#18)
 
     # Load the input CSV
     input_file = args.input_csv
@@ -1386,6 +1406,12 @@ def cmd_campaign(args):
             print(f"\n\n  Campaign interrupted. Progress saved — resume anytime.\n")
             _save_campaign_progress(progress)
             sys.exit(0)
+        except BudgetExceeded as e:
+            # Per-run cost cap hit (#18): stop the whole session, save progress.
+            print(f"\n  STOPPING — {e}")
+            print(f"  Raise COST_BUDGET_USD (or unset it) to continue.\n")
+            _save_campaign_progress(progress)
+            break
         except Exception as e:
             logger.error(f"Error processing {niche} in {location}: {e}")
             # Don't mark as completed so it retries next time
@@ -1400,6 +1426,7 @@ def cmd_campaign(args):
     print(f"  Total completed:        {len(completed)}/{len(combos)}")
     print(f"  Serper queries today:   {today_usage['serper_queries']}")
     print(f"  Emails sent today:      {today_usage['emails_sent']}")
+    _print_cost_summary()
     remaining_count = len(combos) - len(completed)
     if remaining_count > 0:
         print(f"  Remaining:              {remaining_count}")

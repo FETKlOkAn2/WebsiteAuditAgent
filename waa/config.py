@@ -20,6 +20,10 @@ VISION_MODEL = os.getenv("VISION_MODEL", "claude-haiku-4-5")
 # A prospect must score at least this (0-10) on the Haiku qualify gate to
 # earn an expensive personalized email.
 QUALIFY_THRESHOLD = float(os.getenv("QUALIFY_THRESHOLD", "6"))
+# Per-run cost ceiling in USD (improvement #18). 0 = no cap. When set, an
+# LLM call that would push the run over the cap raises BudgetExceeded and the
+# command stops gracefully, printing what it spent.
+COST_BUDGET_USD = float(os.getenv("COST_BUDGET_USD", "0"))
 PAGESPEED_DELAY = float(os.getenv("PAGESPEED_DELAY_SECONDS", "2"))
 SCRAPE_DELAY = float(os.getenv("SCRAPE_DELAY_SECONDS", "1"))
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "output")
