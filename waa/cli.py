@@ -113,6 +113,16 @@ def load_contacts_csv(filepath: str) -> dict:
     return contacts
 
 
+# Maps a failed quality-gate check (waa.analysis.quality_gate) onto the
+# pipeline's existing `skipped_reason` strings so downstream code, logs and
+# tests keep their stable vocabulary.
+_QUALITY_SKIP_REASON = {
+    "content": "empty_email",
+    "grounding": "v2_validation_failed",
+    "human_tone": "critic_failed",
+}
+
+
 def process_single(
     url: str,
     name: str = "",
@@ -253,35 +263,43 @@ def process_single(
         }
 
         audit["owner_first_name"] = owner_first_name
-        critic_failed = bool(v2.get("critic")) and not v2["critic"].get("passed", True)
 
         if v2.get("skipped_reason"):
-            # Mark this prospect as skipped. _prepare_send_list will drop it.
+            # The generator never produced a draft (gated / thin / LLM error).
             audit["email"] = None
             audit["skipped_reason"] = v2["skipped_reason"]
-        elif not v2["validation"]["passed"]:
-            # We got an email but it isn't grounded — still return it but flag
-            audit["email"] = {
-                "subject_line": v2["subject_line"],
-                "email_body": v2["email_body"],
-                "follow_up_subject": v2["follow_up_subject"],
-                "follow_up_body": v2["follow_up_body"],
-                "owner_first_name": owner_first_name,
-            }
-            audit["skipped_reason"] = "v2_validation_failed"
-        elif critic_failed:
-            # Reads as AI even after a rewrite — don't send. The Turing critic
-            # replaces a human reviewer here (improvement #3).
-            audit["email"] = None
-            audit["skipped_reason"] = "critic_failed"
         else:
-            audit["email"] = {
+            # Automated quality gate (improvement #10): no human reads this
+            # draft — the gate decides whether it is send-worthy. It folds the
+            # fact-grounding (#2) and Turing-critic (#3) verdicts into one
+            # decision, replacing the manual `preview` eyeballing step. The
+            # screenshot-correctness check runs later (at send time), once the
+            # proof image exists.
+            from waa.analysis.quality_gate import (
+                EmailArtifact, build_output_quality_gate,
+            )
+            verdict = build_output_quality_gate(
+                require_human=critique, check_screenshot=False,
+            ).evaluate(EmailArtifact.from_v2(v2))
+            email_payload = {
                 "subject_line": v2["subject_line"],
                 "email_body": v2["email_body"],
                 "follow_up_subject": v2["follow_up_subject"],
                 "follow_up_body": v2["follow_up_body"],
                 "owner_first_name": owner_first_name,
             }
+            if verdict.send_worthy:
+                audit["email"] = email_payload
+            else:
+                failure = verdict.first_blocking_failure()
+                reason = _QUALITY_SKIP_REASON.get(
+                    failure.name if failure else "", "quality_gate_failed")
+                audit["skipped_reason"] = reason
+                # Keep the draft when only grounding failed (useful for QA);
+                # drop it entirely when it reads as AI (existing behaviour).
+                audit["email"] = (
+                    email_payload if reason == "v2_validation_failed" else None
+                )
         return audit
 
     # ---- legacy v1 path (unchanged) ----
@@ -502,7 +520,8 @@ def _build_highlight_target(facts: dict, lang: str = "sk"):
 
 
 def attach_screenshots(results: list[dict], *, lang: str = "sk",
-                       only_with_target: bool = True) -> int:
+                       only_with_target: bool = True,
+                       require_correct: bool = True) -> int:
     """
     Capture an annotated "proof" screenshot for each audited prospect and
     store it on the result as result["screenshot"].
@@ -513,9 +532,17 @@ def attach_screenshots(results: list[dict], *, lang: str = "sk",
 
     Returns the number of screenshots successfully captured.
 
+    Screenshot-correctness (improvement #10): with `require_correct=True`
+    (default) a captured shot is only stored when its red box actually landed
+    on the intended element (annotated AND target_found). A misaligned
+    annotation is misleading "proof", so it is dropped rather than relying on a
+    human to eyeball it. The `preview` QA view passes `require_correct=False`
+    so a person can still SEE the near-misses.
+
     Deliverability reminder: the captured image is for the *reply / follow-up*,
     not the first cold email — see screenshot.py module docstring.
     """
+    from waa.analysis.quality_gate import is_trustworthy_proof
     try:
         from waa.proof.screenshot import PageScreenshotter
     except ImportError:
@@ -542,16 +569,26 @@ def attach_screenshots(results: list[dict], *, lang: str = "sk",
         with PageScreenshotter() as shot:
             for r, target in jobs:
                 res = shot.capture(r["url"], target)
-                if res.ok():
-                    r["screenshot"] = {
-                        "path": res.path,
-                        "annotated": res.annotated,
-                        "target_found": res.target_found,
-                        "caption": target.caption if target else "",
-                    }
-                    captured += 1
-                else:
+                if not res.ok():
                     logger.info(f"  no screenshot for {r['url']}: {res.error}")
+                    continue
+                if require_correct and not is_trustworthy_proof(
+                    res.annotated, res.target_found
+                ):
+                    # The red box did not land on the claimed element — this
+                    # image would be misleading proof, so don't keep it.
+                    logger.info(
+                        f"  dropping misaligned proof for {r['url']} "
+                        f"(annotated={res.annotated}, target_found={res.target_found})"
+                    )
+                    continue
+                r["screenshot"] = {
+                    "path": res.path,
+                    "annotated": res.annotated,
+                    "target_found": res.target_found,
+                    "caption": target.caption if target else "",
+                }
+                captured += 1
     except ImportError:
         logger.warning("playwright browser unavailable — skipping proof screenshots")
         return 0
@@ -606,6 +643,14 @@ def _prepare_send_list(
     contacts = contacts or {}
     registry = _load_sent_registry()
 
+    # Final automated quality gate (improvement #10): the single send-time
+    # authority on send-worthiness. Re-affirms grounding + human tone (a
+    # belt-and-braces check; these already gated in process_single) and is the
+    # only place the proof screenshot's correctness is enforced before send.
+    # NA-safe: v1 emails carry no v2 metadata, so those checks pass.
+    from waa.analysis.quality_gate import EmailArtifact, build_output_quality_gate
+    send_gate = build_output_quality_gate()
+
     # First pass: pick + dedup. Validation is a separate, slower pass.
     candidates = []
     for r in audit_results:
@@ -618,6 +663,16 @@ def _prepare_send_list(
 
         if not subject or not body:
             continue
+
+        verdict = send_gate.evaluate(EmailArtifact.from_result(r))
+        if not verdict.send_worthy:
+            logger.info(f"Quality gate blocked {url}: {verdict.reason()}")
+            continue
+        if r.get("screenshot") and not verdict.screenshot_ok():
+            # Email still goes (the proof rides the reply, not the first
+            # touch), but a misaligned shot must never be used as proof.
+            logger.info(f"  proof screenshot for {url} not trustworthy — discarding it")
+            r["screenshot"] = None
 
         domain = domain_of(url)
         contact = contacts.get(domain, {})
@@ -734,7 +789,10 @@ def cmd_preview(args):
     )
 
     print("  Capturing proof screenshots…\n")
-    attach_screenshots(results, lang=args.lang, only_with_target=False)
+    # QA view: show every shot, including near-misses, so a person can see
+    # what the screenshot-correctness gate would drop in a real send.
+    attach_screenshots(results, lang=args.lang, only_with_target=False,
+                       require_correct=False)
 
     from waa.proof.preview_report import render_preview
     html_doc = render_preview(results, niche=args.niche,

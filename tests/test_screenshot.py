@@ -168,14 +168,31 @@ class TestAttachScreenshots(unittest.TestCase):
         self.assertNotIn("screenshot", results[2])
 
     def test_only_with_target_false_captures_everything_auditable(self):
+        # QA/preview semantics: require_correct=False keeps even plain
+        # (unannotated) shots so a human can eyeball near-misses.
         results = self._results()
         fake = _FakeShot({
             "https://good.example": ScreenshotResult("https://good.example", path="/tmp/a.png"),
             "https://thin.example": ScreenshotResult("https://thin.example", path="/tmp/b.png"),
         })
         with patch("waa.proof.screenshot.PageScreenshotter", return_value=fake):
-            n = audit_agent.attach_screenshots(results, lang="sk", only_with_target=False)
+            n = audit_agent.attach_screenshots(
+                results, lang="sk", only_with_target=False, require_correct=False)
         self.assertEqual(n, 2)  # errored one still skipped
+
+    def test_require_correct_drops_misaligned_proof(self):
+        # Default (require_correct=True): a shot whose red box missed the
+        # intended element is dropped — never kept as misleading proof (#10).
+        results = self._results()
+        fake = _FakeShot({
+            "https://good.example": ScreenshotResult(
+                "https://good.example", path="/tmp/a.png",
+                annotated=True, target_found=False),  # box missed
+        })
+        with patch("waa.proof.screenshot.PageScreenshotter", return_value=fake):
+            n = audit_agent.attach_screenshots(results, lang="sk")
+        self.assertEqual(n, 0)
+        self.assertNotIn("screenshot", results[0])
 
     def test_failed_capture_leaves_no_screenshot_key(self):
         results = self._results()
