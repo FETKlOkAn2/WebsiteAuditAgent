@@ -35,13 +35,18 @@ def strip_ai_dashes(text: str) -> str:
     return text
 
 
-def _call_llm(prompt: str) -> str:
-    """Call Anthropic API and return the text response."""
+def _call_llm(prompt: str, *, model: str | None = None, max_tokens: int = 2000) -> str:
+    """Call Anthropic API and return the text response.
+
+    `model` defaults to config.LLM_MODEL (the expensive synthesis model).
+    Pass a cheaper model (e.g. config.QUALIFY_MODEL) for high-volume,
+    low-stakes calls like lead qualification.
+    """
     client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
     message = client.messages.create(
-        model=config.LLM_MODEL,
-        max_tokens=2000,
+        model=model or config.LLM_MODEL,
+        max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
 

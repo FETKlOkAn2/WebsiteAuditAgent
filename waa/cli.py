@@ -125,6 +125,7 @@ def process_single(
     lang: str = "en",
     niche: str = "",
     location: str = "",
+    qualify: bool = True,
 ) -> dict:
     """
     Full audit pipeline for a single URL.
@@ -135,6 +136,8 @@ def process_single(
         lang:       "en" or "sk" — only meaningful for v2.
         niche/location: forwarded to the conversion auditor for personalization.
         require_email:  if True, skip LLM when no contact email is found.
+        qualify:    if True (v2 only), run the cheap Haiku qualify gate before
+                    the expensive email generation. Disable for max coverage.
     """
     audit = analyze_website(url, skip_pagespeed=skip_pagespeed)
 
@@ -162,19 +165,49 @@ def process_single(
         # didn't keep it. analyze_website doesn't currently store html on the
         # result, so we fetch once via the scraper.
         from waa.discovery.scraper import fetch_html
+        from waa.analysis import personalization
+        from waa.analysis.gating import LeadContext, build_lead_gate_chain
+
         fetch = fetch_html(url)
         html = fetch.get("html") or ""
 
-        # Owner-name lookup before the LLM call — first-name greetings are
-        # the single biggest cold-email reply-rate driver in industry research.
+        # Compute the conversion facts ONCE (free, no tokens) and reuse them
+        # for both the gate chain and the email generator.
+        facts = personalization.extract_facts(html, url, niche=niche, location=location)
+
+        # Cheap-before-expensive gate (improvement #16): a free heuristic and
+        # then the cheap Haiku qualifier decide whether this lead is worth the
+        # expensive Sonnet email. We never reach Sonnet — nor even the owner
+        # lookup — on a lead that's already been rejected here.
+        decision = build_lead_gate_chain(qualify=qualify).evaluate(
+            LeadContext(
+                url=url, niche=niche,
+                contact_emails=audit.get("contact_emails") or [],
+                facts=facts,
+            )
+        )
+        if not decision.passed:
+            logger.info(f"Gated {url} at '{decision.stage}': {decision.reason}")
+            audit["analysis"] = {
+                "issues": [], "lead_score": 0,
+                "overall_impression": f"gated:{decision.stage}: {decision.reason}",
+                "facts": facts.to_dict(), "audit_mode": "v2", "lang": lang,
+                "gate": {"stage": decision.stage, "reason": decision.reason,
+                         "score": decision.score},
+            }
+            audit["email"] = None
+            audit["skipped_reason"] = f"gated:{decision.stage}"
+            return audit
+
+        # Owner-name lookup (free, network only) — first-name greetings are
+        # the single biggest cold-email reply-rate driver. Only worth doing
+        # now that the lead has cleared the gate.
         owner_first_name = None
         try:
             from waa.analysis.owner_finder import find_owner_name
             owner_hit = find_owner_name(
                 html=html, base_url=url,
                 contact_emails=audit.get("contact_emails") or [],
-                # Don't slow the pipeline; only follow About pages once we
-                # have a good signal from homepage / emails.
                 follow_about=True,
             )
             if owner_hit and owner_hit.get("confidence") in ("high", "medium"):
@@ -192,6 +225,7 @@ def process_single(
             niche=niche, location=location,
             sender_name=sender_name, lang=lang,
             owner_first_name=owner_first_name,
+            facts=facts,
         )
 
         # Map v2 output onto the existing schema so the rest of the pipeline
@@ -264,6 +298,7 @@ def run_batch(
     lang: str = "en",
     niche: str = "",
     location: str = "",
+    qualify: bool = True,
 ) -> list[dict]:
     """Process a batch of URLs with rate limiting."""
     results = []
@@ -281,6 +316,7 @@ def run_batch(
             agency_name=agency_name, sender_name=sender_name,
             sender_title=sender_title, require_email=require_email,
             audit_mode=audit_mode, lang=lang, niche=niche, location=location,
+            qualify=qualify,
         )
         results.append(result)
 
@@ -677,6 +713,9 @@ def cmd_preview(args):
         sender_name=args.sender, require_email=False,
         audit_mode="v2", lang=args.lang,
         niche=args.niche, location=args.location or "",
+        # Preview is a QA view: show every generated email, don't let the
+        # cost gate hide marginal leads from the human.
+        qualify=False,
     )
 
     print("  Capturing proof screenshots…\n")
@@ -759,6 +798,7 @@ def cmd_audit(args):
         lang=getattr(args, "lang", "en"),
         niche=getattr(args, "niche", "") or "",
         location=getattr(args, "location", "") or "",
+        qualify=not getattr(args, "no_qualify", False),
     )
 
     if getattr(args, "screenshots", False):
@@ -884,6 +924,7 @@ def cmd_pipeline(args):
         audit_mode=getattr(args, "audit_mode", "v1"),
         lang=getattr(args, "lang", "en"),
         niche=args.niche, location=args.location or "",
+        qualify=not getattr(args, "no_qualify", False),
     )
 
     if getattr(args, "screenshots", False):
@@ -1147,6 +1188,7 @@ def cmd_campaign(args):
                 lang=getattr(args, "lang", "en"),
                 niche=niche,
                 location=location,
+                qualify=not getattr(args, "no_qualify", False),
             )
 
             today_usage["pagespeed_calls"] += top_n
@@ -1467,6 +1509,9 @@ Examples:
     p_audit.add_argument("--location", default="", help="Location hint (used in v2 mode)")
     p_audit.add_argument("--screenshots", action="store_true",
                          help="Capture an annotated proof screenshot per prospect (needs Playwright)")
+    p_audit.add_argument("--no-qualify", action="store_true",
+                         help="Skip the cheap Haiku qualify gate (v2). Generates an "
+                              "email for every prospect — more coverage, more tokens.")
     p_audit.set_defaults(func=cmd_audit)
 
     # --- send ---
@@ -1537,6 +1582,8 @@ Examples:
                             help="Send to role accounts (info@, support@…) anyway")
     p_pipeline.add_argument("--screenshots", action="store_true",
                             help="Capture an annotated proof screenshot per prospect (needs Playwright)")
+    p_pipeline.add_argument("--no-qualify", action="store_true",
+                            help="Skip the cheap Haiku qualify gate (v2)")
     p_pipeline.set_defaults(func=cmd_pipeline)
 
     # --- campaign ---
@@ -1599,6 +1646,9 @@ Examples:
     p_campaign.add_argument("--screenshots", action="store_true",
                             help="Capture an annotated proof screenshot per prospect "
                                  "(needs Playwright; recommended for the SK proof play)")
+    p_campaign.add_argument("--no-qualify", action="store_true",
+                            help="Skip the cheap Haiku qualify gate. Default is to "
+                                 "qualify (saves the expensive model on weak leads).")
     p_campaign.set_defaults(func=cmd_campaign)
 
     # --- monitor-replies ---

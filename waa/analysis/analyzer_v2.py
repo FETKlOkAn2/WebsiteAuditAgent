@@ -59,6 +59,7 @@ def generate_email_v2(
     sender_name: str = "Tomas",
     lang: str = "sk",
     owner_first_name: Optional[str] = None,
+    facts: Optional[SiteFacts] = None,
 ) -> dict:
     """
     Top-level v2 entry point. Extracts facts, builds the prompt, calls the
@@ -76,7 +77,10 @@ def generate_email_v2(
             "lang": str,
         }
     """
-    facts = personalization.extract_facts(html, url, niche=niche, location=location)
+    # Reuse facts computed by the caller (e.g. the gate chain) if provided,
+    # so the conversion audit isn't run twice.
+    if facts is None:
+        facts = personalization.extract_facts(html, url, niche=niche, location=location)
     base = {
         "facts": facts.to_dict(),
         "owner_first_name": owner_first_name,

@@ -312,6 +312,7 @@ class TestProcessSingleV2(unittest.TestCase):
             skip_pagespeed=True, sender_name="Tomas",
             audit_mode="v2", lang="sk",
             niche="restauracia", location="Bratislava",
+            qualify=False,  # this test covers the generation path, not the gate
         )
         self.assertIsNone(result.get("error"))
         self.assertIsNone(result.get("skipped_reason"))
@@ -337,9 +338,9 @@ class TestProcessSingleV2(unittest.TestCase):
                 audit_mode="v2", lang="sk",
                 niche="restauracia", location="Bratislava",
             )
-        # Skip reason set, no LLM call made, no email sent
+        # The free personalizable gate rejects a thin site before any LLM call.
         self.assertIsNotNone(result.get("skipped_reason"))
-        self.assertIn("insufficient_facts", result["skipped_reason"])
+        self.assertIn("gated:personalizable", result["skipped_reason"])
         mock_llm.assert_not_called()
 
 
