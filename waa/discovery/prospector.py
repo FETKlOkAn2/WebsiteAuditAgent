@@ -25,6 +25,7 @@ import os
 import re
 import time
 from datetime import datetime
+from typing import TYPE_CHECKING
 from urllib.parse import quote_plus
 
 import requests
@@ -33,6 +34,9 @@ from bs4 import BeautifulSoup
 from waa import config
 from waa.core.storage import domain_of
 from waa.discovery.scraper import fetch_html, extract_seo_signals, detect_tech_stack
+
+if TYPE_CHECKING:
+    from waa.core.llm import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -168,15 +172,19 @@ def search_duckduckgo(query: str, num_results: int = 20) -> list[dict]:
     return unique[:num_results]
 
 
-def search_with_llm(niche: str, location: str, count: int = 20) -> list[str]:
+def search_with_llm(niche: str, location: str, count: int = 20,
+                    client: "LLMClient | None" = None) -> list[str]:
     """
-    Use Claude to generate smart search queries for a niche.
-    Returns a list of Google search queries optimized to find
-    businesses with weak websites.
-    """
-    import anthropic
+    Generate smart search queries for a niche. Returns a list of Google
+    search queries optimized to find businesses with weak websites.
 
-    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    Runs on the CHEAP model tier (improvement #14) — query generation is a
+    high-volume, low-stakes task that never justified the premium model.
+    Inject `client` to test without a network call.
+    """
+    from waa.core.llm import LLMClient, ModelTier
+
+    client = client or LLMClient()
 
     prompt = f"""Generate {min(count, 10)} simple search queries to find actual business websites
 for "{niche}" businesses{f' in {location}' if location else ''}.
@@ -192,13 +200,7 @@ IMPORTANT RULES:
 Return ONLY a JSON array of search query strings, nothing else.
 Example: ["{niche} {location}", "{niche} {location} book appointment", "{niche} near {location} website"]"""
 
-    message = client.messages.create(
-        model=config.LLM_MODEL,
-        max_tokens=500,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    text = message.content[0].text.strip()
+    text = client.complete(prompt, tier=ModelTier.CHEAP, max_tokens=500).strip()
     if text.startswith("```"):
         lines = text.split("\n")[1:]
         if lines and lines[-1].strip() == "```":

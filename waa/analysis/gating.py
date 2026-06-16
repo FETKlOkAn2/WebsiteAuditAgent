@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Optional, Protocol, Sequence, runtime_checkabl
 
 if TYPE_CHECKING:
     from waa.analysis.personalization import SiteFacts
+    from waa.core.llm import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -191,14 +192,19 @@ class HaikuQualifyGate(LeadGate):
 
 
 class AnthropicQualifier:
-    """`QualifyModel` backed by the cheap Anthropic model from config."""
+    """`QualifyModel` backed by the CHEAP model tier (improvement #14).
 
-    def __init__(self, model: str) -> None:
-        self._model = model
+    Depends on an LLMClient so the concrete model lives in one place
+    (ModelPolicy), not hardcoded here.
+    """
+
+    def __init__(self, client: Optional["LLMClient"] = None) -> None:
+        from waa.core.llm import default_llm_client
+        self._client = client or default_llm_client()
 
     def complete(self, prompt: str) -> str:
-        from waa.analysis.analyzer import _call_llm
-        return _call_llm(prompt, model=self._model, max_tokens=200)
+        from waa.core.llm import ModelTier
+        return self._client.complete(prompt, tier=ModelTier.CHEAP, max_tokens=200)
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +249,7 @@ def build_lead_gate_chain(
     gates.append(PersonalizableGate(min_facts))
     if qualify:
         from waa import config
-        model = qualifier or AnthropicQualifier(config.QUALIFY_MODEL)
+        model = qualifier or AnthropicQualifier()
         thr = config.QUALIFY_THRESHOLD if threshold is None else threshold
         gates.append(HaikuQualifyGate(model, thr))
     return GateChain(gates)
