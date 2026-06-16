@@ -17,9 +17,26 @@ SOLID:
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Optional
+
+
+def parse_json(text: str) -> dict:
+    """Parse a JSON object from LLM output, tolerating markdown fences or
+    surrounding prose. Shared by the cheap-tier consumers (gating, critic)."""
+    text = (text or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        m = re.search(r"\{.*\}", text, re.S)
+        if m:
+            return json.loads(m.group(0))
+        raise
 
 
 class ModelTier(str, Enum):

@@ -312,7 +312,7 @@ class TestProcessSingleV2(unittest.TestCase):
             skip_pagespeed=True, sender_name="Tomas",
             audit_mode="v2", lang="sk",
             niche="restauracia", location="Bratislava",
-            qualify=False,  # this test covers the generation path, not the gate
+            qualify=False, critique=False,  # covers generation path, not gate/critic
         )
         self.assertIsNone(result.get("error"))
         self.assertIsNone(result.get("skipped_reason"))

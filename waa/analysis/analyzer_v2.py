@@ -33,7 +33,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import anthropic
 
@@ -42,6 +42,9 @@ from waa.analysis import personalization
 from waa.analysis.personalization import SiteFacts
 from waa.analysis import prompts_v2
 from waa.analysis.analyzer import _call_llm, _parse_json_response, _clean_email_body, strip_ai_dashes
+
+if TYPE_CHECKING:
+    from waa.analysis.critic import EmailCritic
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +63,7 @@ def generate_email_v2(
     lang: str = "sk",
     owner_first_name: Optional[str] = None,
     facts: Optional[SiteFacts] = None,
+    critic: Optional["EmailCritic"] = None,
 ) -> dict:
     """
     Top-level v2 entry point. Extracts facts, builds the prompt, calls the
@@ -158,7 +162,58 @@ def generate_email_v2(
         # The caller (audit_agent) can decide whether to send or skip.
         logger.warning(f"v2 email for {url} still not grounded after retry")
 
+    # Turing critic (improvement #3): a cheap pass that scores how human the
+    # email reads. Only runs on a grounded email; on failure we regenerate
+    # once aimed at sounding human, and the caller drops it if it still fails.
+    if critic is not None and passed and base["email_body"]:
+        _apply_critic(base, critic, prompt, facts, sender_name, lang, url)
+
     return base
+
+
+def _apply_critic(base: dict, critic: "EmailCritic", prompt: str,
+                  facts: SiteFacts, sender_name: str, lang: str, url: str) -> None:
+    """Score the email's human-ness and, if it reads as AI, regenerate once.
+    Mutates `base` in place, recording a 'critic' block."""
+    verdict = critic.review(base["email_body"], lang=lang)
+    base["critic"] = {"passed": verdict.passed, "score": verdict.score,
+                      "reason": verdict.reason, "retried": False}
+    if verdict.passed:
+        return
+
+    logger.info(f"critic flagged {url} as AI-sounding ({verdict.reason}) — regenerating")
+    humanize_prompt = (
+        prompt + "\n\n## CRITIC FEEDBACK (rewrite to fix)\n"
+        f"A reader said the previous draft read as AI-written: \"{verdict.reason}\". "
+        "Rewrite so it reads unmistakably like a busy real person typed it quickly: "
+        "vary sentence length, drop any marketing tone or over-politeness, keep it "
+        "specific and a little informal. Still quote at least one fact verbatim."
+    )
+    base["critic"]["retried"] = True
+    try:
+        result = _parse_json_response(_call_llm(humanize_prompt))
+    except (json.JSONDecodeError, anthropic.APIError) as e:
+        logger.warning(f"critic-retry generation failed for {url}: {e}")
+        return
+
+    new_body = _clean_email_body(result.get("email_body", ""), sender_name)
+    new_quoted = _facts_quoted(new_body, facts)
+    if not new_quoted:
+        return  # regeneration lost grounding; keep the original, stay failed
+    new_verdict = critic.review(new_body, lang=lang)
+    if new_verdict.passed:
+        base["email_body"] = new_body
+        base["subject_line"] = strip_ai_dashes(
+            (result.get("subject_line") or base["subject_line"]).strip())
+        base["follow_up_subject"] = strip_ai_dashes(
+            (result.get("follow_up_subject") or base["follow_up_subject"]).strip())
+        base["follow_up_body"] = _clean_email_body(
+            result.get("follow_up_body") or base["follow_up_body"], sender_name)
+        base["validation"]["quoted_facts"] = new_quoted
+        base["critic"].update(passed=True, score=new_verdict.score,
+                              reason=new_verdict.reason)
+    else:
+        base["critic"].update(score=new_verdict.score, reason=new_verdict.reason)
 
 
 # ---------------------------------------------------------------------------

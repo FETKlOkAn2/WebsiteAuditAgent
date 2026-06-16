@@ -126,6 +126,7 @@ def process_single(
     niche: str = "",
     location: str = "",
     qualify: bool = True,
+    critique: bool = True,
 ) -> dict:
     """
     Full audit pipeline for a single URL.
@@ -138,6 +139,8 @@ def process_single(
         require_email:  if True, skip LLM when no contact email is found.
         qualify:    if True (v2 only), run the cheap Haiku qualify gate before
                     the expensive email generation. Disable for max coverage.
+        critique:   if True (v2 only), run the Turing critic on the generated
+                    email and drop it if it still reads as AI after one rewrite.
     """
     audit = analyze_website(url, skip_pagespeed=skip_pagespeed)
 
@@ -220,12 +223,16 @@ def process_single(
             logger.debug(f"Owner-name extraction failed for {url}: {e}")
 
         from waa.analysis.analyzer_v2 import generate_email_v2
+        email_critic = None
+        if critique:
+            from waa.analysis.critic import HumanToneCritic
+            email_critic = HumanToneCritic()
         v2 = generate_email_v2(
             html=html, url=url, site_name=site_name,
             niche=niche, location=location,
             sender_name=sender_name, lang=lang,
             owner_first_name=owner_first_name,
-            facts=facts,
+            facts=facts, critic=email_critic,
         )
 
         # Map v2 output onto the existing schema so the rest of the pipeline
@@ -240,11 +247,13 @@ def process_single(
             "lead_score": 0,
             "facts": v2.get("facts"),
             "validation": v2.get("validation"),
+            "critic": v2.get("critic"),
             "audit_mode": "v2",
             "lang": lang,
         }
 
         audit["owner_first_name"] = owner_first_name
+        critic_failed = bool(v2.get("critic")) and not v2["critic"].get("passed", True)
 
         if v2.get("skipped_reason"):
             # Mark this prospect as skipped. _prepare_send_list will drop it.
@@ -260,6 +269,11 @@ def process_single(
                 "owner_first_name": owner_first_name,
             }
             audit["skipped_reason"] = "v2_validation_failed"
+        elif critic_failed:
+            # Reads as AI even after a rewrite — don't send. The Turing critic
+            # replaces a human reviewer here (improvement #3).
+            audit["email"] = None
+            audit["skipped_reason"] = "critic_failed"
         else:
             audit["email"] = {
                 "subject_line": v2["subject_line"],
@@ -299,6 +313,7 @@ def run_batch(
     niche: str = "",
     location: str = "",
     qualify: bool = True,
+    critique: bool = True,
 ) -> list[dict]:
     """Process a batch of URLs with rate limiting."""
     results = []
@@ -316,7 +331,7 @@ def run_batch(
             agency_name=agency_name, sender_name=sender_name,
             sender_title=sender_title, require_email=require_email,
             audit_mode=audit_mode, lang=lang, niche=niche, location=location,
-            qualify=qualify,
+            qualify=qualify, critique=critique,
         )
         results.append(result)
 
@@ -714,8 +729,8 @@ def cmd_preview(args):
         audit_mode="v2", lang=args.lang,
         niche=args.niche, location=args.location or "",
         # Preview is a QA view: show every generated email, don't let the
-        # cost gate hide marginal leads from the human.
-        qualify=False,
+        # cost gate or critic hide marginal leads from the human.
+        qualify=False, critique=False,
     )
 
     print("  Capturing proof screenshots…\n")
@@ -799,6 +814,7 @@ def cmd_audit(args):
         niche=getattr(args, "niche", "") or "",
         location=getattr(args, "location", "") or "",
         qualify=not getattr(args, "no_qualify", False),
+        critique=not getattr(args, "no_critic", False),
     )
 
     if getattr(args, "screenshots", False):
@@ -925,6 +941,7 @@ def cmd_pipeline(args):
         lang=getattr(args, "lang", "en"),
         niche=args.niche, location=args.location or "",
         qualify=not getattr(args, "no_qualify", False),
+        critique=not getattr(args, "no_critic", False),
     )
 
     if getattr(args, "screenshots", False):
@@ -1189,6 +1206,7 @@ def cmd_campaign(args):
                 niche=niche,
                 location=location,
                 qualify=not getattr(args, "no_qualify", False),
+                critique=not getattr(args, "no_critic", False),
             )
 
             today_usage["pagespeed_calls"] += top_n
@@ -1512,6 +1530,8 @@ Examples:
     p_audit.add_argument("--no-qualify", action="store_true",
                          help="Skip the cheap Haiku qualify gate (v2). Generates an "
                               "email for every prospect — more coverage, more tokens.")
+    p_audit.add_argument("--no-critic", action="store_true",
+                         help="Skip the Turing critic (v2). Keeps emails even if they read as AI.")
     p_audit.set_defaults(func=cmd_audit)
 
     # --- send ---
@@ -1584,6 +1604,8 @@ Examples:
                             help="Capture an annotated proof screenshot per prospect (needs Playwright)")
     p_pipeline.add_argument("--no-qualify", action="store_true",
                             help="Skip the cheap Haiku qualify gate (v2)")
+    p_pipeline.add_argument("--no-critic", action="store_true",
+                            help="Skip the Turing critic (v2)")
     p_pipeline.set_defaults(func=cmd_pipeline)
 
     # --- campaign ---
@@ -1649,6 +1671,9 @@ Examples:
     p_campaign.add_argument("--no-qualify", action="store_true",
                             help="Skip the cheap Haiku qualify gate. Default is to "
                                  "qualify (saves the expensive model on weak leads).")
+    p_campaign.add_argument("--no-critic", action="store_true",
+                            help="Skip the Turing critic. Default runs it so AI-sounding "
+                                 "emails are dropped instead of sent.")
     p_campaign.set_defaults(func=cmd_campaign)
 
     # --- monitor-replies ---

@@ -20,9 +20,7 @@ The chain runs cheapest-first and short-circuits on the first rejection.
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, Protocol, Sequence, runtime_checkable
@@ -260,14 +258,6 @@ def build_lead_gate_chain(
 # ---------------------------------------------------------------------------
 
 def _parse_json(text: str) -> dict:
-    """Parse JSON, tolerating markdown fences or surrounding prose."""
-    text = (text or "").strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        m = re.search(r"\{.*\}", text, re.S)
-        if m:
-            return json.loads(m.group(0))
-        raise
+    """Parse JSON from LLM output (shared helper in waa.core.llm)."""
+    from waa.core.llm import parse_json
+    return parse_json(text)
