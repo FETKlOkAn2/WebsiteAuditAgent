@@ -409,12 +409,16 @@ def _record_sent(
     follow_up_subject: str = "",
     follow_up_body: str = "",
     follow_up_after_days: int = 4,
+    dimensions: dict | None = None,
 ):
     """Record that we sent to this email/domain.
 
     Stores the Message-ID and the (already-generated) follow-up body so that
     the `monitor-replies` cron and the `send-followups` command have
     everything they need without re-running the audit.
+
+    `dimensions` are the experiment attributes of this send (niche, sender,
+    lead tier…) used later by the feedback / A-B analyzer (#20).
     """
     domain = domain_of(website)
     now = datetime.now()
@@ -435,6 +439,7 @@ def _record_sent(
         "followup_at": followup_at,
         "followup_sent_at": None,
         "reply_received_at": None,
+        "dimensions": dimensions or {},
     }
     registry["emails"][email.lower()] = entry
     registry["domains"][domain] = {
@@ -443,13 +448,17 @@ def _record_sent(
     }
 
 
-def _persist_sent_results(send_list: list[dict], send_results: list[dict]) -> int:
+def _persist_sent_results(send_list: list[dict], send_results: list[dict],
+                          *, sender: str = "") -> int:
     """
     Record every successfully-sent email into the sent registry, carrying its
     Message-ID and follow-up payload for the later `send-followups` step.
 
     `send_list` and `send_results` are positionally aligned (as returned by
     sender.send_batch). Returns the number of sends recorded.
+
+    `sender` is the rotation identity used for this batch; it is recorded as a
+    feedback dimension (#20) so reply rate can be compared across senders.
 
     This is the shared tail of cmd_send / cmd_pipeline / cmd_campaign — each
     used to inline the same load → loop → save dance.
@@ -459,11 +468,19 @@ def _persist_sent_results(send_list: list[dict], send_results: list[dict]) -> in
     for sent, result in zip(send_list, send_results):
         if result.get("status") != "sent":
             continue
+        lead_value = sent.get("lead_value") or {}
+        dimensions = {
+            "niche": sent.get("niche") or "",
+            "sender": sender or "",
+            "lead_tier": lead_value.get("tier") or "",
+            "lead_value": lead_value.get("value"),
+        }
         _record_sent(
             registry, sent["to"], sent["website"], sent["subject"],
             message_id=result.get("message_id"),
             follow_up_subject=sent.get("follow_up_subject", ""),
             follow_up_body=sent.get("follow_up_body", ""),
+            dimensions=dimensions,
         )
         recorded += 1
     _save_sent_registry(registry)
@@ -744,6 +761,7 @@ def _prepare_send_list(
         # and carried on the candidate so we can rank the send list.
         lead_value = score_result(r, scorer).to_dict()
         r["lead_value"] = lead_value
+        facts = (r.get("analysis") or {}).get("facts") or {}
 
         # Carry follow-up data through to the send pipeline so _record_sent
         # can persist it for the scheduled follow-up step.
@@ -757,6 +775,7 @@ def _prepare_send_list(
             "follow_up_body": (email_data.get("follow_up_body") or "").replace("\\n", "\n"),
             "owner_first_name": email_data.get("owner_first_name") or "",
             "lead_value": lead_value,
+            "niche": facts.get("niche") or "",
         })
 
     # Rank best-first so a downstream daily cap keeps the highest-value leads.
@@ -1027,7 +1046,9 @@ def cmd_send(args):
 
     # Record sent emails so we never contact them again
     if not dry_run:
-        _persist_sent_results(send_list, results)
+        _persist_sent_results(send_list, results,
+                              sender=getattr(args, "from_name", "")
+                              or getattr(args, "sender", ""))
 
     log_path = save_send_log(results)
     print_send_summary(results)
@@ -1132,7 +1153,7 @@ def cmd_pipeline(args):
                 )
                 # Record sent emails so we never contact them again
                 if not dry_run:
-                    _persist_sent_results(send_list, send_results)
+                    _persist_sent_results(send_list, send_results, sender=args.sender)
                 log_path = save_send_log(send_results)
                 print_send_summary(send_results)
                 print(f"  Send log: {log_path}")
@@ -1386,7 +1407,8 @@ def cmd_campaign(args):
 
                         if not dry_run:
                             # Record sent emails so we never contact them again
-                            sent_count = _persist_sent_results(send_list, send_results)
+                            sent_count = _persist_sent_results(
+                                send_list, send_results, sender=args.sender)
                             today_usage["emails_sent"] += sent_count
                         else:
                             today_usage["emails_sent"] += len(send_list)
@@ -1571,6 +1593,25 @@ def cmd_send_followups(args):
 # ---------------------------------------------------------------------------
 # monitor-replies — IMAP poll all sender mailboxes and post replies to Discord
 # ---------------------------------------------------------------------------
+
+def cmd_feedback(args):
+    """Show reply-rate by segment (#20) — what's actually earning replies."""
+    from waa.analysis.feedback import FeedbackAnalyzer
+
+    registry = _load_sent_registry()
+    report = FeedbackAnalyzer().analyze(registry)
+
+    if getattr(args, "json", False):
+        print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
+        return
+
+    print()
+    print(report.summary(min_sent=getattr(args, "min_sent", 1)))
+    print()
+    if report.total_sent and not report.total_replied:
+        print("  (no replies recorded yet — segments will populate as answers "
+              "arrive; run monitor-replies to capture them)\n")
+
 
 def cmd_monitor_replies(args):
     """Poll all configured Zoho mailboxes for replies, post to Discord webhook."""
@@ -1834,6 +1875,17 @@ Examples:
                             help="Skip the Turing critic. Default runs it so AI-sounding "
                                  "emails are dropped instead of sent.")
     p_campaign.set_defaults(func=cmd_campaign)
+
+    # --- feedback ---
+    p_feedback = subparsers.add_parser(
+        "feedback",
+        help="Reply-rate by niche / sender / lead tier / subject length (A-B, #20)",
+    )
+    p_feedback.add_argument("--min-sent", type=int, default=1,
+                            help="Only show segments with at least N sends (default: 1)")
+    p_feedback.add_argument("--json", action="store_true",
+                            help="Emit the raw report as JSON")
+    p_feedback.set_defaults(func=cmd_feedback)
 
     # --- monitor-replies ---
     p_monitor = subparsers.add_parser(
