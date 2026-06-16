@@ -257,6 +257,7 @@ def _build_prompt(
         niche_present=", ".join(facts.niche_specific_present) or "(none)",
         surprise=facts.surprising_finding or "(none)",
         hi_finding=facts.high_confidence_finding or "(none)",
+        business_case=facts.business_case or "(none)",
         quotable_facts=quotable_str,
         sender_name=sender_name,
         owner_first_name=owner_value,

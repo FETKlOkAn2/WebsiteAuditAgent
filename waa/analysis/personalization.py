@@ -47,6 +47,7 @@ class SiteFacts:
     niche_specific_missing: list[str] = field(default_factory=list)
     surprising_finding: Optional[str] = None
     high_confidence_finding: Optional[str] = None  # one Finding to anchor on
+    business_case: Optional[str] = None  # money-framed angle for the email lead
     booking_field_count: Optional[int] = None
     has_phone_clickable: Optional[bool] = None
     has_clear_h1: Optional[bool] = None
@@ -192,6 +193,11 @@ def extract_facts(
 
     # Local signals
     facts.has_phone_clickable = audit.local.get("has_phone_clickable")
+
+    # Business case (improvement #8): the most commercially compelling,
+    # market-aware money angle for the email to lead with.
+    from waa.analysis.business_case import BusinessCaseBuilder
+    facts.business_case = BusinessCaseBuilder().summary_for_prompt(audit, niche) or None
 
     return facts
 

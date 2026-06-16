@@ -134,7 +134,7 @@ class TestPromptsV2(unittest.TestCase):
         for ph in ["{quotable_facts}", "{sender_name}", "{niche_sk}",
                    "{city}", "{h1}", "{primary_cta}", "{phone_clickable}",
                    "{niche_missing}", "{niche_present}", "{surprise}",
-                   "{hi_finding}", "{url}", "{site_name}"]:
+                   "{hi_finding}", "{business_case}", "{url}", "{site_name}"]:
             self.assertIn(ph, prompts_v2.EMAIL_PROMPT_SK,
                           f"SK template missing {ph}")
 
@@ -142,7 +142,7 @@ class TestPromptsV2(unittest.TestCase):
         for ph in ["{quotable_facts}", "{sender_name}", "{city}", "{niche}",
                    "{h1}", "{primary_cta}", "{phone_clickable}",
                    "{niche_missing}", "{niche_present}", "{surprise}",
-                   "{hi_finding}", "{url}", "{site_name}"]:
+                   "{hi_finding}", "{business_case}", "{url}", "{site_name}"]:
             self.assertIn(ph, prompts_v2.EMAIL_PROMPT_EN,
                           f"EN template missing {ph}")
 

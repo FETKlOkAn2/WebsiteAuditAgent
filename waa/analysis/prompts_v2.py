@@ -58,6 +58,13 @@ obnoviť alebo prerobiť, aby reálne privádzala zákazníkov. NEvymenúvaj 5
 chýb (to zahltí). Spomeň JEDNU konkrétnu, potom jemne otvor tému celého
 webu. Pýtaj sa na rozhovor o stránke, nie na opravu jednej featury.
 
+## VEĎ PENIAZMI, NIE BUGOM
+Nepíš len ČO je zle, ale prečo to majiteľa stojí ZÁKAZNÍKOV alebo peniaze,
+jazykom jeho trhu. Toto je tvoj hlavný uhol (parafrázuj vlastnými slovami,
+NEopisuj doslova): {business_case}
+Samotný technický bug (chýba H1, alt-texty) nikoho nezaujíma; zaujme strata
+zákazníkov a to, že web nevyzerá/nefunguje ako má pre JEHO konkrétny biznis.
+
 ## CTA, striedaj ich, NIKDY tú istú vetu
 Zakázané (slabé a opakované): "Mám vám poslať detail?", "Chcete to vedieť?",
 a najmä "Je to vedome takto, alebo to mám opraviť?" Túto vetu NIKDY nepouži.
@@ -134,6 +141,7 @@ Niche-špecifické chýba: {niche_missing}
 Niche-špecifické má: {niche_present}
 Nezvyčajný detail: {surprise}
 Hlavné zistenie (high-confidence): {hi_finding}
+Biznis dopad (veď týmto): {business_case}
 Tieto fakty SI MÔŽEŠ citovať doslova: {quotable_facts}
 
 DÔLEŽITÉ: Aspoň jeden zo `quotable_facts` musí byť v emaile DOSLOVA. Žiadne pomlčky. Inak je výstup neplatný.
@@ -175,6 +183,13 @@ a refresh/redesign so it actually brings in customers. Do NOT list 5
 problems (that overwhelms). Name ONE concrete thing, then gently open the
 whole-site conversation. Ask for a conversation about the site, not a
 one-feature fix.
+
+## LEAD WITH MONEY, NOT THE BUG
+Don't just say WHAT is wrong; say why it costs the owner CUSTOMERS or money,
+in their market's terms. This is your main angle (paraphrase it, do not copy
+verbatim): {business_case}
+A raw technical bug (missing H1, alt text) interests nobody; lost customers
+and a site that doesn't work for THEIR business does.
 
 ## CTA, vary it, NEVER repeat the same line
 Banned (weak, overused): "Want me to send what I found?", "Worth a look?".
@@ -229,6 +244,7 @@ Niche elements missing: {niche_missing}
 Niche elements present: {niche_present}
 Unusual detail: {surprise}
 Top finding (high-confidence): {hi_finding}
+Business impact (lead with this): {business_case}
 Facts you MAY quote verbatim: {quotable_facts}
 
 CRITICAL: At least one of `quotable_facts` MUST appear verbatim. No dashes.
