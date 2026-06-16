@@ -682,6 +682,11 @@ def _prepare_send_list(
     from waa.analysis.quality_gate import EmailArtifact, build_output_quality_gate
     send_gate = build_output_quality_gate()
 
+    # Profit-weighted lead scoring (improvement #19): rank send-worthy leads by
+    # expected value to the agency so the daily email cap is spent best-first.
+    from waa.analysis.lead_scoring import build_default_scorer, score_result
+    scorer = build_default_scorer()
+
     # First pass: pick + dedup. Validation is a separate, slower pass.
     candidates = []
     for r in audit_results:
@@ -722,6 +727,11 @@ def _prepare_send_list(
             logger.info(f"Skipping {url} — {reason}")
             continue
 
+        # Expected-profit score; stashed on the result for telemetry/preview
+        # and carried on the candidate so we can rank the send list.
+        lead_value = score_result(r, scorer).to_dict()
+        r["lead_value"] = lead_value
+
         # Carry follow-up data through to the send pipeline so _record_sent
         # can persist it for the scheduled follow-up step.
         candidates.append({
@@ -733,7 +743,19 @@ def _prepare_send_list(
             "follow_up_subject": (email_data.get("follow_up_subject") or "").strip(),
             "follow_up_body": (email_data.get("follow_up_body") or "").replace("\\n", "\n"),
             "owner_first_name": email_data.get("owner_first_name") or "",
+            "lead_value": lead_value,
         })
+
+    # Rank best-first so a downstream daily cap keeps the highest-value leads.
+    # Stable sort preserves discovery order within an equal score.
+    candidates.sort(key=lambda c: c["lead_value"]["value"], reverse=True)
+    if candidates:
+        logger.info(
+            "Lead value: " + ", ".join(
+                f"{c['website']}={c['lead_value']['value']}({c['lead_value']['tier']})"
+                for c in candidates[:8]
+            )
+        )
 
     # Second pass: validate, attach validation metadata, drop bad ones.
     if not validate_emails or not candidates:
@@ -825,6 +847,15 @@ def cmd_preview(args):
     attach_screenshots(results, lang=args.lang, only_with_target=False,
                        require_correct=False,
                        design_critic=_build_design_critic(args))
+
+    # Profit-weighted lead value (improvement #19) so the QA view shows which
+    # leads are worth the scarce daily sends, and order the cards best-first.
+    from waa.analysis.lead_scoring import build_default_scorer, score_result
+    _scorer = build_default_scorer()
+    for r in results:
+        if not r.get("skipped_reason"):
+            r["lead_value"] = score_result(r, _scorer).to_dict()
+    results.sort(key=lambda r: (r.get("lead_value") or {}).get("value", -1), reverse=True)
 
     from waa.proof.preview_report import render_preview
     html_doc = render_preview(results, niche=args.niche,

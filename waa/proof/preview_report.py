@@ -58,8 +58,14 @@ def _email_html(result: dict) -> str:
     owner_line = f'<div class="meta">Owner detected: <b>{_esc(owner)}</b></div>' if owner else \
                  '<div class="meta">Owner: <i>unknown (no greeting)</i></div>'
 
+    lv = result.get("lead_value") or {}
+    value_badge = ""
+    if lv:
+        value_badge = (f'<span class="lead lead-{_esc(lv.get("tier"))}">'
+                       f'value {_esc(lv.get("value"))} · {_esc(lv.get("tier"))}</span>')
+
     parts = [
-        f'<div class="subject">{_esc(subject)}</div>',
+        f'<div class="subject">{_esc(subject)} {value_badge}</div>',
         f'<pre class="body">{_esc(body)}</pre>',
         owner_line,
         f'<div class="meta">Validation: {badge}</div>',
@@ -181,6 +187,11 @@ def render_preview(results: list[dict], *, niche: str = "", location: str = "",
   .ok {{ color:var(--ok); font-weight:600; }}
   .warn {{ color:var(--accent); font-weight:600; }}
   .skip {{ color:#94a3b8; font-style:italic; }}
+  .lead {{ font-size:11px; font-weight:700; border-radius:6px; padding:2px 8px;
+           vertical-align:middle; }}
+  .lead-high {{ background:#dcfce7; color:#166534; }}
+  .lead-medium {{ background:#fef9c3; color:#854d0e; }}
+  .lead-low {{ background:#f1f5f9; color:#64748b; }}
   .smell {{ display:inline-block; background:#fef2f2; color:#b91c1c;
             border:1px solid #fecaca; border-radius:6px; padding:1px 7px;
             margin:2px 4px 2px 0; font-size:12px; }}
