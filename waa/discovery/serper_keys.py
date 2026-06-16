@@ -24,20 +24,24 @@ import os
 from typing import Optional, Sequence
 
 
+# How many numbered SERPER_API_KEY_N slots to scan. Gap-tolerant: missing
+# numbers are simply skipped, so keys can be added in any order.
+_MAX_NUMBERED_KEYS = 20
+
+
 def load_serper_keys() -> list[str]:
     """Collect Serper keys from env, in order, de-duplicated.
 
-    Accepts a comma-separated SERPER_API_KEY plus numbered SERPER_API_KEY_2..N.
+    Accepts a comma-separated SERPER_API_KEY plus numbered
+    SERPER_API_KEY_2 .. SERPER_API_KEY_20. Gaps are tolerated (a missing _4
+    does not stop _5 from being read), so you can add keys freely.
     """
     raw: list[str] = []
     raw.extend((os.getenv("SERPER_API_KEY", "") or "").split(","))
-    i = 2
-    while True:
+    for i in range(2, _MAX_NUMBERED_KEYS + 1):
         val = os.getenv(f"SERPER_API_KEY_{i}")
-        if not val:
-            break
-        raw.extend(val.split(","))
-        i += 1
+        if val:
+            raw.extend(val.split(","))
     # strip, drop empties, preserve first-seen order, de-dupe
     seen: set[str] = set()
     keys: list[str] = []

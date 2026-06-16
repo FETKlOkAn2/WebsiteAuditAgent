@@ -5,7 +5,7 @@ name: Daily Campaign
 # email validation), volume kept low (--email-limit 15) for a gentle ramp.
 # Weekend sends are auto-skipped by the campaign's send-window guard.
 on:
-  #schedule:
+  schedule:
     - cron: '0 9 * * 1-5'   # 11:00 Bratislava, Mon–Fri — Tomas
     - cron: '0 12 * * 1-5'  # 14:00 Bratislava, Mon–Fri — Erik
     - cron: '0 15 * * 1-5'  # 17:00 Bratislava, Mon–Fri — Michal
@@ -103,17 +103,24 @@ jobs:
           echo "SMTP_HOST=${{ secrets.SMTP_HOST }}" >> .env
           echo "SMTP_PORT=${{ secrets.SMTP_PORT }}" >> .env
 
-          # Per-sender: email, password, and optionally their own Serper key
+          # Serper key POOL — give EVERY run all keys so rotation works in CI:
+          # when one key runs out of credits the pipeline rolls to the next
+          # (waa/discovery/serper_keys.py). Empty secrets are skipped and gaps
+          # tolerated, so you can add SERPER_API_KEY_4..N freely later.
+          echo "SERPER_API_KEY=${{ secrets.SERPER_API_KEY }}" >> .env
+          echo "SERPER_API_KEY_2=${{ secrets.SERPER_API_KEY_2 }}" >> .env
+          echo "SERPER_API_KEY_3=${{ secrets.SERPER_API_KEY_3 }}" >> .env
+          echo "SERPER_API_KEY_4=${{ secrets.SERPER_API_KEY_4 }}" >> .env
+          echo "SERPER_API_KEY_5=${{ secrets.SERPER_API_KEY_5 }}" >> .env
+
+          # Per-sender: which mailbox actually sends this run
           if [ "$SENDER" = "erik" ]; then
-            echo "SERPER_API_KEY=${{ secrets.SERPER_API_KEY_2 }}" >> .env
             echo "SMTP_EMAIL=${{ secrets.SMTP_EMAIL_2 }}" >> .env
             echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD_2 }}" >> .env
           elif [ "$SENDER" = "michal" ]; then
-            echo "SERPER_API_KEY=${{ secrets.SERPER_API_KEY_3 }}" >> .env
             echo "SMTP_EMAIL=${{ secrets.SMTP_EMAIL_3 }}" >> .env
             echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD_3 }}" >> .env
           else
-            echo "SERPER_API_KEY=${{ secrets.SERPER_API_KEY }}" >> .env
             echo "SMTP_EMAIL=${{ secrets.SMTP_EMAIL }}" >> .env
             echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}" >> .env
           fi

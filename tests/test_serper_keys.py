@@ -58,12 +58,12 @@ class TestLoadKeys(unittest.TestCase):
         os.environ["SERPER_API_KEY_3"] = "k2"
         self.assertEqual(load_serper_keys(), ["k1", "k2"])
 
-    def test_numbered_stops_at_gap(self):
+    def test_numbered_tolerates_gaps(self):
         os.environ["SERPER_API_KEY"] = "k1"
         os.environ["SERPER_API_KEY_2"] = "k2"
-        # no _3 -> _4 must not be picked up
+        # no _3 -> _4 should STILL be picked up (gap-tolerant)
         os.environ["SERPER_API_KEY_4"] = "k4"
-        self.assertEqual(load_serper_keys(), ["k1", "k2"])
+        self.assertEqual(load_serper_keys(), ["k1", "k2", "k4"])
 
     def test_empty(self):
         self.assertEqual(load_serper_keys(), [])
