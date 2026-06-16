@@ -100,19 +100,16 @@ def _call_llm_vision(
 
 
 def _parse_json_response(text: str) -> dict:
-    """Extract JSON from LLM response, handling markdown code blocks."""
-    text = text.strip()
+    """Extract JSON from an LLM response.
 
-    # Strip markdown code fences if present
-    if text.startswith("```"):
-        lines = text.split("\n")
-        # Remove first line (```json or ```) and last line (```)
-        lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines)
-
-    return json.loads(text)
+    Delegates to the shared, hardened parser (waa.core.llm.parse_json) which
+    tolerates markdown fences, surrounding prose, trailing commas, and the
+    unescaped-inner-quote / raw-newline mistakes that otherwise raise
+    JSONDecodeError and silently drop a lead (llm_error). Still raises
+    JSONDecodeError when nothing parses, so callers can regenerate.
+    """
+    from waa.core.llm import parse_json
+    return parse_json(text)
 
 
 def analyze_audit_data(audit_data: dict) -> dict:

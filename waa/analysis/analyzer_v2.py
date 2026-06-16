@@ -48,6 +48,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Appended to the prompt when the first response was not valid JSON. The
+# overwhelmingly common cause is a straight double quote inside a Slovak string
+# value (e.g. referencing the "Rezervovať" button), which breaks json.loads.
+_STRICT_JSON_SUFFIX = (
+    "\n\n## STRICT JSON\n"
+    "Your previous output was not valid JSON. Return ONLY a single valid JSON "
+    "object. Inside any string value, NEVER use the straight double-quote "
+    'character ("). If you need to quote something, use single quotes or the '
+    "typographic quotes „ and “. Escape every newline as \\n. No markdown, no "
+    "prose before or after the JSON."
+)
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -117,10 +129,22 @@ def generate_email_v2(
     try:
         response = _call_llm(prompt)
         result = _parse_json_response(response)
-    except (json.JSONDecodeError, anthropic.APIError) as e:
+    except anthropic.APIError as e:
         logger.error(f"v2 LLM call failed for {url}: {e}")
         base["skipped_reason"] = f"llm_error: {e}"
         return base
+    except json.JSONDecodeError as e:
+        # The model emitted JSON the hardened parser still couldn't fix
+        # (almost always unescaped inner quotes). Regenerate ONCE with an
+        # explicit strict-JSON instruction before giving up — this is what
+        # previously dropped leads as "llm_error: Expecting ',' delimiter".
+        logger.info(f"v2 JSON parse failed for {url} ({e}) — regenerating with strict-JSON")
+        try:
+            result = _parse_json_response(_call_llm(prompt + _STRICT_JSON_SUFFIX))
+        except (json.JSONDecodeError, anthropic.APIError) as e2:
+            logger.error(f"v2 strict-JSON retry failed for {url}: {e2}")
+            base["skipped_reason"] = f"llm_error: {e2}"
+            return base
 
     body = result.get("email_body", "")
     body = _clean_email_body(body, sender_name)

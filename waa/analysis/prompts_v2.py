@@ -121,6 +121,9 @@ Príklad follow-upu:
 "Ešte k tomu, váš formulár má 7 políčok, väčšina {niche_sk} má 2 až 3. Spolu s tým prvým to vyzerá, že web by chcel poriadnu obnovu. Zavoláme na 10 minút?\\n\\n{sender_name}"
 
 ## VÝSTUP (iba JSON, žiadny markdown)
+DÔLEŽITÉ: vnútri textových hodnôt NIKDY nepoužívaj rovné úvodzovky ("). Ak chceš
+niečo odcitovať (napr. názov tlačidla), použi typografické „ a “ alebo apostrof.
+Inak sa JSON pokazí.
 {{
   "subject_line": "3 až 6 slov, prirodzená kapitalizácia, žiadne pomlčky",
   "email_body": "Telo (50 až 80 slov). Použi \\\\n pre nový riadok. Žiadne pomlčky. Skonč iba menom: {sender_name}.",
@@ -224,6 +227,9 @@ Under 30 words. Add ONE new concrete finding and reopen the whole-site
 angle. No dashes. Different CTA from the first email.
 
 ## OUTPUT (JSON only, no markdown)
+IMPORTANT: inside string values NEVER use the straight double-quote character
+("). If you need to quote something (e.g. a button label), use single quotes or
+typographic quotes “ and ”. Otherwise the JSON breaks.
 {{
   "subject_line": "3 to 6 words, natural capitalisation, no dashes",
   "email_body": "Full email (50 to 80 words). Use \\\\n for line breaks. No dashes. End with just {sender_name}.",

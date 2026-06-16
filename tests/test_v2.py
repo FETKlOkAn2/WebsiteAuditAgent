@@ -230,7 +230,8 @@ class TestAnalyzerV2(unittest.TestCase):
         self.assertTrue(result["email_body"])
 
     def test_handles_garbage_llm_response_gracefully(self):
-        with patch.object(analyzer_v2, "_call_llm", return_value="not json {{"):
+        # Both attempts unparseable -> gives up with skipped_reason (not a crash)
+        with patch.object(analyzer_v2, "_call_llm", return_value="not json at all"):
             result = analyzer_v2.generate_email_v2(
                 html=HTML_RICH_SK, url="https://ukarola.example",
                 site_name="X", niche="restauracia", location="Bratislava",
@@ -238,6 +239,39 @@ class TestAnalyzerV2(unittest.TestCase):
             )
         # Should not raise; should return skipped_reason
         self.assertIsNotNone(result.get("skipped_reason"))
+        self.assertIn("llm_error", result["skipped_reason"])
+
+    def test_regenerates_when_first_json_is_unparseable(self):
+        # First response can't be parsed/repaired; second is clean -> recovered.
+        # This is the fix for leads dropped as "llm_error: Expecting , delimiter".
+        with patch.object(analyzer_v2, "_call_llm",
+                          side_effect=["sorry, no json here", EMAIL_QUOTING_FACT]) as mock:
+            result = analyzer_v2.generate_email_v2(
+                html=HTML_RICH_SK, url="https://ukarola.example",
+                site_name="Reštaurácia U Karola",
+                niche="restauracia", location="Bratislava",
+                sender_name="Tomas", lang="sk",
+            )
+        self.assertEqual(mock.call_count, 2)
+        self.assertIsNone(result.get("skipped_reason"))
+        self.assertTrue(result["email_body"])
+
+    def test_inner_quotes_in_first_response_are_repaired(self):
+        # A straight quote inside the value (the reported failure) is repaired
+        # by the parser, so the lead is NOT dropped as llm_error. The body
+        # quotes the real CTA so grounding passes too.
+        bad = ('{"subject_line": "rychla otazka", "email_body": '
+               '"Vsimol som si "Rezervovať stôl" co nikam nevedie.\\nTomas", '
+               '"follow_up_subject": "Re: rychla otazka", "follow_up_body": "Bumping.\\nTomas"}')
+        with patch.object(analyzer_v2, "_call_llm", return_value=bad):
+            result = analyzer_v2.generate_email_v2(
+                html=HTML_RICH_SK, url="https://ukarola.example",
+                site_name="Reštaurácia U Karola",
+                niche="restauracia", location="Bratislava",
+                sender_name="Tomas", lang="sk",
+            )
+        self.assertNotIn("llm_error", str(result.get("skipped_reason")))
+        self.assertIn("Rezervovať stôl", result["email_body"])
 
 
 # ---------------------------------------------------------------------------

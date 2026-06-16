@@ -18,9 +18,44 @@ if ROOT not in sys.path:
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
 
+import json  # noqa: E402
+
 from waa.core.llm import (  # noqa: E402
-    ModelTier, ModelPolicy, LLMClient, default_llm_client,
+    ModelTier, ModelPolicy, LLMClient, default_llm_client, parse_json,
 )
+
+
+class TestParseJsonRobustness(unittest.TestCase):
+    """parse_json must survive the JSON mistakes LLMs make (improvement: the
+    'llm_error: Expecting , delimiter' bug)."""
+
+    def test_plain_json(self):
+        self.assertEqual(parse_json('{"a": 1}'), {"a": 1})
+
+    def test_strips_markdown_fences(self):
+        self.assertEqual(parse_json('```json\n{"a": 1}\n```'), {"a": 1})
+
+    def test_surrounding_prose(self):
+        self.assertEqual(parse_json('Here you go:\n{"a": 1}\nThanks!'), {"a": 1})
+
+    def test_trailing_comma_repaired(self):
+        self.assertEqual(parse_json('{"a": 1, "b": 2,}'), {"a": 1, "b": 2})
+
+    def test_unescaped_inner_quotes_repaired(self):
+        # The exact failure the user reported: a straight quote inside a value.
+        raw = '{"subject_line": "all good", "email_body": "I saw the "Book" button broken"}'
+        out = parse_json(raw)
+        self.assertIn("Book", out["email_body"])
+        self.assertEqual(out["subject_line"], "all good")
+
+    def test_raw_newline_in_string_repaired(self):
+        raw = '{"email_body": "line one\nline two"}'
+        out = parse_json(raw)
+        self.assertIn("line one", out["email_body"])
+
+    def test_total_garbage_still_raises(self):
+        with self.assertRaises(json.JSONDecodeError):
+            parse_json("there is no json here at all")
 
 
 class _RecordingTransport:

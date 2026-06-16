@@ -25,18 +25,87 @@ from typing import Callable, Optional
 
 
 def parse_json(text: str) -> dict:
-    """Parse a JSON object from LLM output, tolerating markdown fences or
-    surrounding prose. Shared by the cheap-tier consumers (gating, critic)."""
+    """Parse a JSON object from LLM output, tolerating markdown fences,
+    surrounding prose, and the common LLM mistakes that break json.loads
+    (trailing commas, unescaped double quotes inside a string value, raw
+    newlines/tabs inside strings). Shared by the cheap-tier consumers
+    (gating, critic) and the v2 email generator.
+
+    Raises json.JSONDecodeError if nothing parses, so callers can still retry.
+    """
     text = (text or "").strip()
     if text.startswith("```"):
         text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        m = re.search(r"\{.*\}", text, re.S)
-        if m:
-            return json.loads(m.group(0))
-        raise
+
+    # Narrow to the outermost { ... } object if there's surrounding prose.
+    m = re.search(r"\{.*\}", text, re.S)
+    candidates = [text]
+    if m:
+        candidates.append(m.group(0))
+
+    last_err: Optional[json.JSONDecodeError] = None
+    for cand in candidates:
+        for attempt in (cand, _repair_json(cand)):
+            try:
+                return json.loads(attempt)
+            except json.JSONDecodeError as e:
+                last_err = e
+    raise last_err if last_err else json.JSONDecodeError("no JSON found", text or "", 0)
+
+
+def _repair_json(text: str) -> str:
+    """Best-effort repair of the JSON mistakes LLMs make most often.
+
+    - removes trailing commas before } or ]
+    - escapes raw control characters (newline/tab/CR) that appear INSIDE string
+      literals, and escapes stray double quotes inside a string value (the
+      "...the "Book" button..." case that produces 'Expecting , delimiter').
+
+    A tiny state machine walks the text tracking whether we're inside a string;
+    a double quote inside a string is treated as literal (and escaped) unless
+    the next non-space character closes the value (`,` `}` `]` `:`).
+    """
+    out: list[str] = []
+    in_string = False
+    escaped = False
+    for i, ch in enumerate(text):
+        if escaped:
+            out.append(ch)
+            escaped = False
+            continue
+        if ch == "\\":
+            out.append(ch)
+            escaped = True
+            continue
+        if ch == '"':
+            if not in_string:
+                in_string = True
+                out.append(ch)
+            else:
+                # Does this quote actually close the string? Look ahead past
+                # whitespace for a structural character.
+                nxt = _next_nonspace(text, i + 1)
+                if nxt in {",", "}", "]", ":", ""}:
+                    in_string = False
+                    out.append(ch)
+                else:
+                    out.append('\\"')  # stray inner quote -> escape it
+            continue
+        if in_string and ch in "\n\r\t":
+            out.append({"\n": "\\n", "\r": "\\r", "\t": "\\t"}[ch])
+            continue
+        out.append(ch)
+    repaired = "".join(out)
+    # Trailing commas: {"a":1,} or [1,2,]
+    repaired = re.sub(r",(\s*[}\]])", r"\1", repaired)
+    return repaired
+
+
+def _next_nonspace(text: str, start: int) -> str:
+    for j in range(start, len(text)):
+        if not text[j].isspace():
+            return text[j]
+    return ""
 
 
 class ModelTier(str, Enum):
