@@ -28,6 +28,15 @@ on:
         type: boolean
         default: false
 
+# Serialize all campaign runs: the three daily senders share the same progress
+# and sent-registry artifacts, so two runs must never overlap. cancel-in-progress
+# = false means a new run QUEUES behind a running one instead of killing it
+# mid-send (which would lose progress). With longer runs now allowed (~3h), this
+# guarantees Tomas finishes and uploads before Erik starts, etc.
+concurrency:
+  group: daily-campaign
+  cancel-in-progress: false
+
 jobs:
   campaign:
     runs-on: ubuntu-latest
