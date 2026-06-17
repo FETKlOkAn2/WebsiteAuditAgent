@@ -31,7 +31,7 @@ on:
 jobs:
   campaign:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 200
 
     steps:
       - name: Checkout code
@@ -175,14 +175,17 @@ jobs:
           # Gentle ramp: cap emails/day/sender low while reputation builds.
           # Raise --email-limit once replies look healthy. v2 + sk are the
           # campaign defaults; OSM is the primary discovery source.
-          RAMP="--email-limit 15"
+          # --max-minutes stops the loop ~10 min before the step's hard kill so
+          # progress + artifacts are always saved cleanly (public repo = CI
+          # minutes are free, so a long run costs nothing).
+          RAMP="--email-limit 15 --max-minutes 175"
 
           if [ -n "$SENDER_ARG" ]; then
             python -m waa campaign $SEND_FLAG $RESET_FLAG $RAMP --sender "$SENDER_ARG" --sender-full "$SENDER_FULL_ARG"
           else
             python -m waa campaign $SEND_FLAG $RESET_FLAG $RAMP
           fi
-        timeout-minutes: 90
+        timeout-minutes: 185
 
       # Upload shared files — all senders read/write the same ones
       - name: Upload progress
