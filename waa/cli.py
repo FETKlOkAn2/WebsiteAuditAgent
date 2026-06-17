@@ -1313,9 +1313,23 @@ def cmd_campaign(args):
     print(f"{'='*60}\n")
 
     processed_this_session = 0
+    started_at = datetime.now()
+    max_minutes = getattr(args, "max_minutes", 0) or 0
 
     for combo in remaining:
         niche, location = combo.split("|", 1)
+
+        # Wall-clock guard: stop cleanly BEFORE the CI step's hard kill so
+        # progress + artifacts are saved and the job ends green. One combo can
+        # take several minutes (per-prospect fetches, email probes), so we stop
+        # between combos with a buffer left under the limit.
+        if max_minutes:
+            elapsed_min = (datetime.now() - started_at).total_seconds() / 60
+            if elapsed_min >= max_minutes:
+                print(f"\n  STOPPING — time budget reached "
+                      f"({elapsed_min:.0f}/{max_minutes} min). Progress saved; "
+                      f"resume next run.\n")
+                break
 
         # Check if we'd exceed Serper limit
         if today_usage["serper_queries"] + QUERIES_PER_RUN > serper_limit:
@@ -1858,6 +1872,8 @@ Examples:
     p_campaign.add_argument("--send", action="store_true", help="Enable email sending")
     p_campaign.add_argument("--confirm-send", action="store_true", help="Actually send (default is dry-run)")
     p_campaign.add_argument("--reset", action="store_true", help="Reset progress and start from scratch")
+    p_campaign.add_argument("--max-minutes", type=int, default=75,
+                            help="Stop cleanly after this many minutes so CI saves progress before its hard timeout (default: 75; 0 = no limit)")
     p_campaign.add_argument("--audit-mode", choices=["v1", "v2"], default="v2",
                             help="v1=legacy PageSpeed prompt, v2=fact-grounded (default)")
     p_campaign.add_argument("--lang", choices=["en", "sk"], default="sk",
