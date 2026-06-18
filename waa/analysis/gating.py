@@ -176,8 +176,13 @@ class HaikuQualifyGate(LeadGate):
 
     def _build_prompt(self, lead: LeadContext) -> str:
         f = lead.facts
+        # Translate the Slovak niche slug to an English market label the cheap
+        # model actually understands. Passing the raw slug (e.g. "zubar") made
+        # Haiku answer "Unknown niche" and tank the score, dropping good leads.
+        from waa.analysis.business_case import profile_for
+        niche_en = profile_for(lead.niche).niche_en if lead.niche else "local business"
         return _QUALIFY_PROMPT.format(
-            niche=lead.niche or "(unknown)",
+            niche=niche_en,
             city=f.city_or_area or "(unknown)",
             h1=(f.h1 or "(none)"),
             cta=(f.primary_cta_text or "(none)"),

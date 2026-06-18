@@ -429,7 +429,13 @@ def scrape_contact_page(url: str) -> list[str]:
     """
     parsed = urlparse(url)
     base = f"{parsed.scheme}://{parsed.netloc}"
-    contact_paths = ["/contact", "/contact-us", "/about", "/about-us"]
+    # Slovak paths first — this is the SK pipeline, and most SK sites keep the
+    # email on /kontakt, not /contact. Missing these was the main reason SK
+    # leads showed "no_contact_email" and never reached the send step.
+    contact_paths = [
+        "/kontakt", "/kontakty", "/o-nas", "/onas", "/o-nas/",
+        "/contact", "/contact-us", "/kontakt-us", "/about", "/about-us",
+    ]
 
     emails = []
     for path in contact_paths:
