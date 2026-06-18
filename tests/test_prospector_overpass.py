@@ -118,5 +118,47 @@ class TestProspectPrefersOverpass(unittest.TestCase):
         self.assertEqual(len(out), 2)
 
 
+class TestDuckDuckGoSelfDisable(unittest.TestCase):
+    """DDG must fail fast and disable itself on data-centre IPs (GitHub runners)
+    rather than burning 15s per query for the whole run."""
+
+    def setUp(self):
+        prospector._DDG_DISABLED = False
+        prospector._DDG_FAILS = 0
+
+    def tearDown(self):
+        prospector._DDG_DISABLED = False
+        prospector._DDG_FAILS = 0
+
+    def test_disables_after_repeated_connect_timeouts(self):
+        import requests
+        with patch("waa.discovery.prospector.requests.get",
+                   side_effect=requests.exceptions.ConnectTimeout("boom")) as get, \
+             patch("waa.discovery.prospector.time.sleep"):
+            # First _DDG_FAIL_LIMIT calls actually try, then it's disabled.
+            for _ in range(prospector._DDG_FAIL_LIMIT):
+                self.assertEqual(prospector.search_duckduckgo("q"), [])
+            calls_before = get.call_count
+            # Now disabled: further calls return immediately without hitting net.
+            self.assertEqual(prospector.search_duckduckgo("q"), [])
+            self.assertEqual(get.call_count, calls_before)
+        self.assertTrue(prospector._DDG_DISABLED)
+
+    def test_success_resets_failure_streak(self):
+        import requests
+        html = ('<a class="result__a" href="https://x.sk">X</a>')
+        ok = MagicMock(status_code=200, text=html)
+        # two failures, then a success -> streak resets, not disabled
+        seq = [requests.exceptions.ConnectTimeout("t"),
+               requests.exceptions.ConnectTimeout("t"), ok]
+        with patch("waa.discovery.prospector.requests.get", side_effect=seq), \
+             patch("waa.discovery.prospector.time.sleep"):
+            prospector.search_duckduckgo("q")
+            prospector.search_duckduckgo("q")
+            prospector.search_duckduckgo("q")  # success
+        self.assertFalse(prospector._DDG_DISABLED)
+        self.assertEqual(prospector._DDG_FAILS, 0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

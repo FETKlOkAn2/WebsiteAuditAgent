@@ -123,39 +123,63 @@ def search_google_serp(query: str, num_results: int = 20, api_key: str = "", cx:
         return []
 
 
+# DuckDuckGo's HTML endpoint frequently blocks data-centre IPs (GitHub Actions
+# runners especially) with connect timeouts or 202s. Burning 15s per query
+# across every combo wastes the whole run, so after a few failures we disable
+# DDG for the rest of the run and lean on OSM / Serper.
+_DDG_DISABLED = False
+_DDG_FAILS = 0
+_DDG_FAIL_LIMIT = 3
+
+
 def search_duckduckgo(query: str, num_results: int = 20) -> list[dict]:
     """
     Search via DuckDuckGo HTML endpoint (no API key, no JS required).
-    Reliable fallback when Google API is unavailable.
+    Last-resort fallback — OSM is primary and Serper is preferred when keys
+    exist. Self-disables after repeated failures so it never stalls a run.
     """
+    global _DDG_DISABLED, _DDG_FAILS
+    if _DDG_DISABLED:
+        return []
+
     results = []
     headers = {
         "User-Agent": config.HEADERS["User-Agent"],
         "Accept-Language": "en-US,en;q=0.9",
     }
 
+    def _note_failure(msg: str):
+        global _DDG_DISABLED, _DDG_FAILS
+        _DDG_FAILS += 1
+        if _DDG_FAILS >= _DDG_FAIL_LIMIT:
+            _DDG_DISABLED = True
+            logger.info(f"DuckDuckGo unreachable from this host ({msg}) — "
+                        "disabling it for this run (using OSM/Serper)")
+        else:
+            logger.info(f"DuckDuckGo unavailable ({msg}) — falling back")
+
     try:
-        for attempt in range(3):
+        resp = None
+        for attempt in range(2):
             resp = requests.get(
                 "https://html.duckduckgo.com/html/",
                 params={"q": query},
                 headers=headers,
-                timeout=15,
+                timeout=8,
             )
             if resp.status_code == 200:
                 break
             elif resp.status_code == 202:
-                # Rate limited — wait and retry
-                wait = 5 * (attempt + 1)
-                logger.info(f"DuckDuckGo rate limited, waiting {wait}s...")
-                time.sleep(wait)
+                # Rate limited — short wait then one retry
+                time.sleep(3)
             else:
-                logger.warning(f"DuckDuckGo returned {resp.status_code}")
+                _note_failure(f"HTTP {resp.status_code}")
                 return []
 
-        if resp.status_code != 200:
-            logger.warning(f"DuckDuckGo still returning {resp.status_code} after retries")
+        if resp is None or resp.status_code != 200:
+            _note_failure("rate-limited (202)")
             return []
+        _DDG_FAILS = 0  # a success resets the streak
 
         soup = BeautifulSoup(resp.text, "lxml")
 
@@ -191,7 +215,8 @@ def search_duckduckgo(query: str, num_results: int = 20) -> list[dict]:
                 })
 
     except requests.RequestException as e:
-        logger.error(f"DuckDuckGo search error: {e}")
+        # Connect timeouts on data-centre IPs land here — count toward disable.
+        _note_failure(type(e).__name__)
 
     # Deduplicate
     seen = set()
