@@ -114,14 +114,26 @@ class QualifyModel(Protocol):
 
 
 _QUALIFY_PROMPT = """\
-You screen cold-outreach prospects for a small web-design agency. Given facts
-about one small-business website, decide whether it is WORTH spending effort
-on a personalised outreach email.
+You screen cold-outreach prospects for a web-design studio that sells FULL
+WEBSITE REDESIGNS to local businesses. The pitch is more customers, bookings and
+revenue from a modern, higher-converting site — NOT fixing isolated bugs. A site
+that merely "works" is still a strong prospect if it looks dated, generic, or
+under-converts.
 
-Answer YES only if ALL of these are plausibly true:
-- there is a real, visible website problem we could point to,
-- fixing or redesigning it could plausibly make the owner money,
-- it's the kind of local business that pays for web work.
+Score 0-10 how good a REDESIGN prospect this is and set worth_contacting.
+
+Lean YES (score 6-9) when BOTH hold:
+- it's a real local business that plausibly pays for web work (clinic, dentist,
+  law/notary office, salon, gym, hotel, trades, services...), AND
+- there is room to improve: dated or generic design, a low design score,
+  weak conversion path, thin trust signals, or poor mobile.
+
+Say NO (score 0-3) only for: big national brands or chains, directories /
+aggregators / social pages (not a single business's own site), or a genuinely
+modern, polished, high-converting site with nothing meaningful to improve.
+
+Do NOT penalise a site just for lacking an obvious "bug" — a tidy but dated or
+plain site is exactly who we redesign.
 
 Return ONLY JSON, nothing else:
 {{"score": <0-10 integer>, "worth_contacting": <true|false>, "reason": "<max 15 words>"}}
@@ -132,9 +144,11 @@ city: {city}
 H1: "{h1}"
 main button: "{cta}"
 phone tappable: {phone}
+design quality (0-10, lower = more redesign upside): {design_score}
+dated-design signals: {design_smells}
 niche elements present: {present}
 niche elements missing: {missing}
-notable problem: {surprise}
+notable issue: {surprise}
 top finding: {hi}
 """
 
@@ -181,12 +195,16 @@ class HaikuQualifyGate(LeadGate):
         # Haiku answer "Unknown niche" and tank the score, dropping good leads.
         from waa.analysis.business_case import profile_for
         niche_en = profile_for(lead.niche).niche_en if lead.niche else "local business"
+        design_score = getattr(f, "design_score", None)
+        design_smells = getattr(f, "design_smells", None) or []
         return _QUALIFY_PROMPT.format(
             niche=niche_en,
             city=f.city_or_area or "(unknown)",
             h1=(f.h1 or "(none)"),
             cta=(f.primary_cta_text or "(none)"),
             phone="yes" if f.has_phone_clickable else "no",
+            design_score=("(unknown)" if design_score is None else design_score),
+            design_smells=", ".join(design_smells) or "(none)",
             present=", ".join(f.niche_specific_present) or "(none)",
             missing=", ".join(f.niche_specific_missing) or "(none)",
             surprise=f.surprising_finding or "(none)",
