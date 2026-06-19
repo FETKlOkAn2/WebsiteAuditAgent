@@ -5,12 +5,14 @@ name: Daily Campaign
 # email validation), volume kept low (--email-limit 15) for a gentle ramp.
 # Weekend sends are auto-skipped by the campaign's send-window guard.
 on:
-  #schedule:
-    - cron: '0 9 * * 1-5'   # 11:00 Bratislava, Mon–Fri — Tomas
-    # Tomas-only while testing reply rate from one mailbox. Re-enable Erik and
-    # Michal (uncomment the two crons below) once the reply rate looks good.
-    # - cron: '0 12 * * 1-5'  # 14:00 Bratislava, Mon–Fri — Erik
-    # - cron: '0 15 * * 1-5'  # 17:00 Bratislava, Mon–Fri — Michal
+  # Schedule OFF while testing — run manually via the "Run workflow" button.
+  # To go live with Tomas only, uncomment `schedule:` + the Tomas cron. Add the
+  # Erik/Michal crons later (and restore the hour-based sender block below) to
+  # rotate senders.
+  # schedule:
+  #   - cron: '0 9 * * 1-5'    # 11:00 Bratislava, Mon–Fri — Tomas
+  #   - cron: '0 12 * * 1-5'   # 14:00 Bratislava, Mon–Fri — Erik
+  #   - cron: '0 15 * * 1-5'   # 17:00 Bratislava, Mon–Fri — Michal
   workflow_dispatch:
     inputs:
       sender:
