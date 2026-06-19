@@ -9,10 +9,10 @@ on:
   # To go live with Tomas only, uncomment `schedule:` + the Tomas cron. Add the
   # Erik/Michal crons later (and restore the hour-based sender block below) to
   # rotate senders.
-  # schedule:
-  #   - cron: '0 9 * * 1-5'    # 11:00 Bratislava, Mon–Fri — Tomas
-  #   - cron: '0 12 * * 1-5'   # 14:00 Bratislava, Mon–Fri — Erik
-  #   - cron: '0 15 * * 1-5'   # 17:00 Bratislava, Mon–Fri — Michal
+   schedule:
+     - cron: '0 9 * * 1-5'    # 11:00 Bratislava, Mon–Fri — Tomas
+   #   - cron: '0 12 * * 1-5'   # 14:00 Bratislava, Mon–Fri — Erik
+   #   - cron: '0 15 * * 1-5'   # 17:00 Bratislava, Mon–Fri — Michal
   workflow_dispatch:
     inputs:
       sender:
