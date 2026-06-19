@@ -7,8 +7,10 @@ name: Daily Campaign
 on:
   #schedule:
     - cron: '0 9 * * 1-5'   # 11:00 Bratislava, Mon–Fri — Tomas
-    - cron: '0 12 * * 1-5'  # 14:00 Bratislava, Mon–Fri — Erik
-    - cron: '0 15 * * 1-5'  # 17:00 Bratislava, Mon–Fri — Michal
+    # Tomas-only while testing reply rate from one mailbox. Re-enable Erik and
+    # Michal (uncomment the two crons below) once the reply rate looks good.
+    # - cron: '0 12 * * 1-5'  # 14:00 Bratislava, Mon–Fri — Erik
+    # - cron: '0 15 * * 1-5'  # 17:00 Bratislava, Mon–Fri — Michal
   workflow_dispatch:
     inputs:
       sender:
@@ -62,16 +64,19 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "name=${{ inputs.sender }}" >> $GITHUB_OUTPUT
           else
-            HOUR=$(date -u +%H)
-            echo "Current UTC hour: $HOUR"
-            # Use ranges to handle GitHub Actions cron delays (up to 15 min)
-            if [ "$HOUR" -ge 9 ] && [ "$HOUR" -lt 12 ]; then
-              echo "name=tomas" >> $GITHUB_OUTPUT
-            elif [ "$HOUR" -ge 12 ] && [ "$HOUR" -lt 15 ]; then
-              echo "name=erik" >> $GITHUB_OUTPUT
-            else
-              echo "name=michal" >> $GITHUB_OUTPUT
-            fi
+            # Tomas-only while testing reply rate from one mailbox. Every
+            # scheduled run uses Tomas regardless of the hour. To restore the
+            # 3-sender rotation, uncomment the Erik/Michal crons above AND
+            # restore the hour-based block below.
+            echo "name=tomas" >> $GITHUB_OUTPUT
+            # HOUR=$(date -u +%H)
+            # if [ "$HOUR" -ge 9 ] && [ "$HOUR" -lt 12 ]; then
+            #   echo "name=tomas" >> $GITHUB_OUTPUT
+            # elif [ "$HOUR" -ge 12 ] && [ "$HOUR" -lt 15 ]; then
+            #   echo "name=erik" >> $GITHUB_OUTPUT
+            # else
+            #   echo "name=michal" >> $GITHUB_OUTPUT
+            # fi
           fi
 
       # Create .env with the right sender's credentials
