@@ -47,6 +47,13 @@ from waa.outreach.sender import (
 
 import warnings
 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
+# Quiet the noisy bs4 warning when a site serves XML (sitemaps, feeds) that we
+# parse with the HTML parser — harmless, just clutters the campaign log.
+try:
+    from bs4 import XMLParsedAsHTMLWarning
+    warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+except Exception:
+    pass
 
 logging.basicConfig(
     level=logging.INFO,
