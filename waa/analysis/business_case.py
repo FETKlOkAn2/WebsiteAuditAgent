@@ -74,6 +74,17 @@ NICHE_PROFILES: dict[str, NicheProfile] = {
     "pekaren": NicheProfile("bakery", "visit", True, False, ("above_fold",)),
     "autoskola": NicheProfile("driving school", "call or sign-up", True, True, ("cta", "trust")),
     "tetovacie studio": NicheProfile("tattoo studio", "enquiry", True, True, ("niche", "trust")),
+    "notar": NicheProfile("notary office", "call or appointment", False, True, ("trust", "above_fold")),
+    "ortodoncia": NicheProfile("orthodontist", "call or request", True, True, ("trust", "cta", "niche")),
+    "financny poradca": NicheProfile("financial advisor", "consultation", False, True, ("trust", "above_fold")),
+    "poistovaci agent": NicheProfile("insurance agent", "consultation", False, True, ("trust", "cta")),
+    "chiropraktik": NicheProfile("chiropractor", "call or booking", True, True, ("trust", "cta")),
+    "instalater": NicheProfile("plumber", "call", True, True, ("local", "trust")),
+    "elektrikar": NicheProfile("electrician", "call", True, True, ("local", "trust")),
+    "pneuservis": NicheProfile("tyre service", "call or visit", True, True, ("local", "cta")),
+    "karoseria": NicheProfile("body shop", "call or quote", True, True, ("local", "trust")),
+    "jazykova skola": NicheProfile("language school", "online sign-up", True, True, ("cta", "trust")),
+    "detska skolka": NicheProfile("preschool", "enquiry or visit", True, True, ("trust", "niche")),
 }
 
 DEFAULT_PROFILE = NicheProfile("local business", "contact", True, True, ("cta", "trust"))
