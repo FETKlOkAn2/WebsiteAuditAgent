@@ -146,22 +146,25 @@ jobs:
         if: steps.check.outputs.skip != 'true'
         run: mkdir -p output
 
-      # Download shared progress and sent registry
-      - name: Download previous progress
+      # Restore state from the LATEST run that has it. actions/download-artifact
+      # only sees artifacts from the *current* run, so it never carried state
+      # across runs (each run started with an empty registry -> broken dedup +
+      # progress). gh run download fetches the most recent run's artifact.
+      - name: Restore campaign state (progress + sent registry)
         if: steps.check.outputs.skip != 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: campaign-progress
-          path: output/
-        continue-on-error: true
-
-      - name: Download sent registry
-        if: steps.check.outputs.skip != 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: sent-registry
-          path: output/
-        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p output
+          for art in campaign-progress sent-registry; do
+            for id in $(gh run list --limit 50 --json databaseId,status \
+                          --jq '.[] | select(.status=="completed") | .databaseId'); do
+              if gh run download "$id" -n "$art" -D output 2>/dev/null; then
+                echo "restored $art from run $id"; break
+              fi
+            done
+          done
+          echo "--- restored state ---"; ls -la output/ 2>/dev/null || true
 
       - name: Run campaign
         if: steps.check.outputs.skip != 'true'
