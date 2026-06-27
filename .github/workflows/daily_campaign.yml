@@ -41,6 +41,11 @@ concurrency:
   group: daily-campaign
   cancel-in-progress: false
 
+# gh run download needs actions:read to restore state artifacts across runs.
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   campaign:
     runs-on: ubuntu-latest

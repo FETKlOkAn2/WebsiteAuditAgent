@@ -25,6 +25,11 @@ concurrency:
   group: daily-campaign
   cancel-in-progress: false
 
+# gh run download needs actions:read to fetch artifacts from other runs.
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   followups:
     runs-on: ubuntu-latest
