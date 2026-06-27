@@ -192,7 +192,29 @@ def generate_email_v2(
     if critic is not None and passed and base["email_body"]:
         _apply_critic(base, critic, prompt, facts, sender_name, lang, url)
 
+    # Final deterministic Slovak polish (runs after the critic so it applies to
+    # whichever body we kept): correct city locative ("v Zilina" -> "v Žiline")
+    # and guarantee a greeting. This is the safety net for the two biggest
+    # AI tells; the prompt asks for both too, but models slip on declension.
+    _polish(base, city=facts.city_or_area or "", lang=lang)
+
     return base
+
+
+def _polish(base: dict, *, city: str, lang: str) -> None:
+    """Apply waa.analysis.sk_text polish to the final email parts in place."""
+    from waa.analysis.sk_text import polish_email
+    cleaned = polish_email(
+        body=base.get("email_body", ""),
+        subject=base.get("subject_line", ""),
+        follow_up_body=base.get("follow_up_body", ""),
+        city=city,
+        owner_first_name=base.get("owner_first_name"),
+        lang=lang,
+    )
+    base["subject_line"] = cleaned["subject"]
+    base["email_body"] = cleaned["body"]
+    base["follow_up_body"] = cleaned["follow_up_body"]
 
 
 def _apply_critic(base: dict, critic: "EmailCritic", prompt: str,

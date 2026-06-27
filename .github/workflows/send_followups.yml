@@ -1,0 +1,104 @@
+name: Send Follow-ups
+
+# Sends the second-touch follow-up to prospects who were emailed at least
+# --after-days ago and haven't replied. Roughly half of all cold-email replies
+# come from follow-ups, so this closes a real gap. It reads the SAME
+# sent_registry.json the campaign writes (downloaded as an artifact), marks
+# followup_sent_at, and re-uploads it.
+on:
+  # Schedule OFF while testing — run manually via "Run workflow". To go live,
+  # uncomment `schedule:` + the cron (a daily morning run pairs well with the
+  # campaign). Keep it Tomas-only until the reply rate looks good.
+  # schedule:
+  #   - cron: '30 9 * * 1-5'   # 11:30 Bratislava, Mon–Fri — after the campaign
+  workflow_dispatch:
+    inputs:
+      after_days:
+        description: 'Only follow up if first email is at least this many days old'
+        type: string
+        default: '4'
+      dry_run:
+        description: 'Dry run (list who is due, send nothing)'
+        type: boolean
+        default: true
+
+# Share the campaign's concurrency group: both workflows read/write the same
+# sent_registry artifact, so they must never run at the same time.
+concurrency:
+  group: daily-campaign
+  cancel-in-progress: false
+
+jobs:
+  followups:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Skip if Tomas SMTP not configured
+        id: check
+        run: |
+          if [ -z "${{ secrets.SMTP_EMAIL }}" ] && [ "${{ inputs.dry_run }}" != "true" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "SMTP_EMAIL not set and not a dry run — skipping"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create .env (Tomas mailbox)
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          cat > .env <<EOF
+          OUTPUT_DIR=output
+          SEND_DELAY_SECONDS=30
+          EOF
+          echo "SMTP_HOST=${{ secrets.SMTP_HOST }}" >> .env
+          echo "SMTP_PORT=${{ secrets.SMTP_PORT }}" >> .env
+          echo "SMTP_EMAIL=${{ secrets.SMTP_EMAIL }}" >> .env
+          echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}" >> .env
+
+      - name: Ensure output directory
+        if: steps.check.outputs.skip != 'true'
+        run: mkdir -p output
+
+      # The sent_registry is the source of due follow-ups — pull the latest.
+      - name: Download sent registry
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: sent-registry
+          path: output/
+        continue-on-error: true
+
+      - name: Send follow-ups
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          AFTER="${{ inputs.after_days }}"
+          AFTER="${AFTER:-4}"
+          if [ "${{ inputs.dry_run }}" = "false" ]; then
+            python -m waa send-followups --after-days "$AFTER" \
+              --confirm-send --from-name "Tomas Maxim"
+          else
+            python -m waa send-followups --after-days "$AFTER" --dry-run
+          fi
+
+      # Re-upload so followup_sent_at timestamps persist for the next run.
+      - name: Upload sent registry
+        uses: actions/upload-artifact@v4
+        if: always() && steps.check.outputs.skip != 'true'
+        with:
+          name: sent-registry
+          path: output/sent_registry.json
+          overwrite: true
+          if-no-files-found: warn

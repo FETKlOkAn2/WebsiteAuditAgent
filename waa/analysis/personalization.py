@@ -159,8 +159,10 @@ def extract_facts(
 
     # Location / city
     if location:
-        # Use the city portion of "Bratislava, SK" or "Scottsdale AZ"
-        city = location.split(",")[0].split()[0]
+        # Keep the full city name before any comma (e.g. "Banska Bystrica"),
+        # not just the first word — truncating it to "Banska" both lost the
+        # name and broke Slovak declension downstream.
+        city = location.split(",")[0].strip()
         facts.city_or_area = city
     else:
         # Fall back to whatever showed up on the page

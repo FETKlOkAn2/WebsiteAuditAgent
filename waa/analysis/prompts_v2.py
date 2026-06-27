@@ -34,14 +34,16 @@ rozhovor o prerobení celej stránky. Nepredávaš jednu opravu.
 1. PRESNE 50 až 80 slov v tele emailu. Spočítaj ich.
 2. Predmet: 3 až 6 slov, bežná kapitalizácia ako v normálnom emaile. Bez
    dvojbodiek. Žiadne klišé ("krátka správa", "rýchla otázka").
-3. Prvý riadok:
-   - Ak vieš meno príjemcu ("{owner_first_name}"), začni "Ahoj {owner_first_name},"
-     alebo "Dobrý deň {owner_first_name},". (Tykať pri salónoch/kaviarňach,
-     vykať pri advokátoch/účtovníkoch/zubároch.) Hneď nato prvá veta =
-     konkrétne pozorovanie z webu.
-   - Ak meno NEVIEŠ ({owner_first_name} = "neznáme"), preskoč oslovenie
-     a začni rovno pozorovaním. Nepíš "Dobrý deň," ani "Zdravím,".
-4. Posledný riadok: iba `{sender_name}`. Nič iné, bez "S pozdravom".
+3. Prvý riadok je VŽDY pozdrav:
+   - Ak vieš meno príjemcu ("{owner_first_name}"), začni "Dobrý deň {owner_first_name},"
+     (alebo "Ahoj {owner_first_name}," pri salónoch/kaviarňach/fitku).
+   - Ak meno NEVIEŠ ({owner_first_name} = "neznáme"), začni jednoducho
+     "Dobrý deň,". Nikdy nezačínaj rovno vetou bez pozdravu.
+   Po pozdrave nasleduje prázdny riadok a potom prvá veta = konkrétne
+   pozorovanie z webu.
+4. Mesto skloňuj správne v lokáli: "v Žiline", "v Košiciach", "v Banskej
+   Bystrici", "v Bratislave" (NIKDY "v Zilina", "v Kosice").
+5. Posledný riadok: iba `{sender_name}`. Nič iné, bez "S pozdravom".
 5. Presne JEDNA otázka v celom emaile, na konci, ako CTA.
 6. Žiadne výkričníky.
 7. ŽIADNE POMLČKY. Nikdy nepouži znak dlhej pomlčky, strednej pomlčky, ani
@@ -164,12 +166,12 @@ selling one fix.
 ## HARD RULES (any violation = failure)
 1. EXACTLY 50 to 80 words in the body. Count them.
 2. Subject: 3 to 6 words, natural capitalisation. No colons. No clickbait.
-3. First line:
+3. First line is ALWAYS a greeting:
    - If you know the recipient's first name ("{owner_first_name}"), start
-     "Hi {owner_first_name}," then the specific observation. Drop the name
-     if you don't know it.
-   - If unknown ({owner_first_name} = "unknown"), skip the greeting and
-     lead with the observation. NO "Hi there", NO "Hello,".
+     "Hi {owner_first_name},".
+   - If unknown ({owner_first_name} = "unknown"), start with a simple "Hi,".
+     Never lead straight into the observation with no greeting.
+   A blank line follows the greeting, then the first specific observation.
 4. Last line: just the sender's first name (`{sender_name}`). Nothing else.
 5. Exactly ONE question in the entire email, at the end, as the CTA.
 6. No exclamation marks.
