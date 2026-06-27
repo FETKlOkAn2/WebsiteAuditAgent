@@ -30,6 +30,12 @@ on:
         type: boolean
         default: false
 
+# gh run download needs actions:read to fetch the sent-registry produced by the
+# campaign workflow's runs.
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   monitor:
     runs-on: ubuntu-latest
@@ -68,22 +74,25 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: mkdir -p output
 
-      # Pull shared state. continue-on-error so the very first run doesn't fail.
-      - name: Download replies_seen artifact
+      # Restore state from the LATEST run that has it. actions/download-artifact
+      # is run-scoped, so it never saw the campaign's sent-registry — the monitor
+      # ran with an empty registry and could not recognise ANY incoming mail as a
+      # reply, so nothing ever reached Discord. gh fetches across runs.
+      - name: Restore state (sent registry + replies seen)
         if: steps.gate.outputs.skip != 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: replies-seen
-          path: output/
-        continue-on-error: true
-
-      - name: Download sent registry
-        if: steps.gate.outputs.skip != 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: sent-registry
-          path: output/
-        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p output
+          for art in sent-registry replies-seen; do
+            for id in $(gh run list --limit 50 --json databaseId,status \
+                          --jq '.[] | select(.status=="completed") | .databaseId'); do
+              if gh run download "$id" -n "$art" -D output 2>/dev/null; then
+                echo "restored $art from run $id"; break
+              fi
+            done
+          done
+          echo "--- state ---"; ls -la output/ 2>/dev/null || true
 
       - name: Build .env (no per-sender SMTP creds in main env, write file)
         if: steps.gate.outputs.skip != 'true'
